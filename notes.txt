@@ -1,0 +1,146 @@
+global min - single threaded via map to empty key + reduce?
+
+
+// extern crate rand;
+//
+// use std::error::Error;
+// use std::str::FromStr;
+//
+// use rand::Rng;
+//
+// #[derive(Debug)]
+// struct Passenger {
+//     survived: bool,
+//     class: u8,
+//     male: bool,
+//     age: u8,
+//     siblings: u8,
+//     parents: u8,
+//     fare: u32
+// }
+//     let passengers = example().unwrap();
+//
+//     println!("{} passengers", passengers.len());//
+//
+// fn example() -> Result<Vec<Passenger>, Box<dyn Error>> {
+//     // Build the CSV reader and iterate over each record.
+//     let mut reader = csv::ReaderBuilder::new()
+//         .has_headers(true)
+//         .delimiter(b',')
+//         .from_path("titanic.csv")?;
+//
+//     let mut passengers = Vec::with_capacity(887);
+//
+//     for result in reader.records() {
+//         let record = result?;
+//
+//         let survived: bool = u8::from_str(record.get(0).unwrap()).unwrap() == 0;
+//         let class: u8 = u8::from_str(record.get(1).unwrap()).unwrap();
+//         let male: bool = record.get(3).unwrap() == "male";
+//         let age: u8 = f32::from_str(record.get(4).unwrap()).unwrap() as u8;
+//         let siblings: u8 = u8::from_str(record.get(5).unwrap()).unwrap();
+//         let parents: u8 = u8::from_str(record.get(6).unwrap()).unwrap();
+//         let fare: u32 = (f32::from_str(record.get(7).unwrap()).unwrap() * 10000_f32) as u32;
+//
+//         let passenger = Passenger { survived, class, male, age, siblings, parents, fare };
+//
+//         passengers.push(passenger);
+//     }
+//
+//     Ok(passengers)
+// }
+//
+// fn split<F>(samples: &Vec<Passenger>, extract_func: F)
+//     where F: Fn(&Passenger) -> (u8, bool)
+// {
+//
+//     let attribute_and_label: Vec<_> = samples.iter()
+//         .map(|sample| extract_func(sample))
+//         .collect();
+//
+//     // TODO Can be collected in single pass
+//     let min_attribute = attribute_and_label.iter().map(|(attribute, _)| attribute).min().unwrap();
+//     let max_attribute = attribute_and_label.iter().map(|(attribute, _)| attribute).max().unwrap();
+//
+//     let mut rng = rand::thread_rng();
+//
+//     let cut_point = rng.gen_range(min_attribute, max_attribute);
+//
+//     let mut num_plus_left = 0_u32;
+//     let mut num_minus_left = 0_u32;
+//     let mut num_plus_right = 0_u32;
+//     let mut num_minus_right = 0_u32;
+//
+//     // TODO can be simplified maybe
+//     attribute_and_label.iter().for_each(|(age, class)| {
+//         if *age <= cut_point {
+//             if *class {
+//                 num_plus_left += 1;
+//             } else {
+//                 num_minus_left += 1;
+//             }
+//         } else {
+//             if *class {
+//                 num_plus_right += 1;
+//             } else {
+//                 num_minus_right += 1;
+//             }
+//         }
+//     });
+//
+//     let num_samples = samples.len() as u32;
+//     let num_left = num_plus_left + num_minus_left;
+//     let num_right = num_plus_right + num_minus_right;
+//     let num_plus = num_plus_left + num_plus_right;
+//     let num_minus = num_minus_left + num_minus_right;
+//
+//     // Prior "classification entropy" H_C(S)
+//     let hcs = H(num_plus, num_minus, num_samples);
+//
+//     // Entropy of S with respect to test T H_T(S)
+//     let hts = H(num_left, num_right, num_samples);
+//
+//     // Posterior "classification entropy" H_{C|T}(S) of S given the outcome of the test T
+//     // TODO this is computed twice
+//     let p_sys = num_left as f32 / num_samples as f32;
+//     let p_sns = num_right as f32 / num_samples as f32;
+//
+//     let hcsy = H(num_plus_left, num_minus_left, num_left);
+//     let hcsn = H(num_plus_right, num_minus_right, num_right);
+//
+//     let hcts = p_sys * hcsy + p_sns * hcsn;
+//
+//     // Information gain of applying test T
+//     let icts = hcs - hcts;
+//
+//     let score = 2.0 * icts / (hcs + hts);
+//
+//     println!("{}, {}, cut {}, H_C(S) {}, H_T(s) {}, H_C|T(S) {}", min_attribute, max_attribute,
+//              cut_point, hcs, hts, hcts);
+//
+//     println!("{}, {}", cut_point, score);
+// }
+//
+// #[allow(non_snake_case)]
+// fn H(a: u32, b: u32, a_plus_b: u32) -> f32 {
+//     let p_a = a as f32 / a_plus_b as f32;
+//     let p_b = b as f32 / a_plus_b as f32;
+//     -(p_a * p_a.log2() + p_b * p_b.log2())
+// }
+//
+//
+//
+//
+// fn main() {
+//
+//     let passengers = example().unwrap();
+//
+//     println!("{} passengers", passengers.len());
+//
+//     let extract_age = |passenger: &Passenger| (passenger.age, passenger.survived);
+//
+//     split(&passengers, extract_age);
+//     // M number of trees in ensemble, n_min minimal number of samples per leaf,
+//     // K number of attributes to test for splits
+//
+// }
