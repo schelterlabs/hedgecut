@@ -6,48 +6,8 @@ use rand::Rng;
 use differential_dataflow::input::InputSession;
 use differential_dataflow::operators::{Reduce, Join, CountTotal};
 
-use std::error::Error;
-use std::str::FromStr;
-
-#[derive(Debug)]
-struct Passenger {
-    survived: bool,
-    class: u8,
-    male: bool,
-    age: u8,
-    siblings: u8,
-    parents: u8,
-    fare: u32
-}
-
-
-fn titanic_data() -> Result<Vec<Passenger>, Box<dyn Error>> {
-    // Build the CSV reader and iterate over each record.
-    let mut reader = csv::ReaderBuilder::new()
-        .has_headers(true)
-        .delimiter(b',')
-        .from_path("titanic.csv")?;
-
-    let mut passengers = Vec::with_capacity(887);
-
-    for result in reader.records() {
-        let record = result?;
-
-        let survived: bool = u8::from_str(record.get(0).unwrap()).unwrap() == 0;
-        let class: u8 = u8::from_str(record.get(1).unwrap()).unwrap();
-        let male: bool = record.get(3).unwrap() == "male";
-        let age: u8 = f32::from_str(record.get(4).unwrap()).unwrap() as u8;
-        let siblings: u8 = u8::from_str(record.get(5).unwrap()).unwrap();
-        let parents: u8 = u8::from_str(record.get(6).unwrap()).unwrap();
-        let fare: u32 = (f32::from_str(record.get(7).unwrap()).unwrap() * 10000_f32) as u32;
-
-        let passenger = Passenger { survived, class, male, age, siblings, parents, fare };
-
-        passengers.push(passenger);
-    }
-
-    Ok(passengers)
-}
+mod titanic;
+mod split_scoring;
 
 fn main() {
 
@@ -82,10 +42,7 @@ fn main() {
                 .reduce(|_, side_label_counts, output| {
                     let mut split_stats = [0_u32; 4];
 
-                    for side_label_count in side_label_counts {
-
-                        let (is_left, is_plus, count) = side_label_count.0;
-
+                    for ((is_left, is_plus, count), _) in side_label_counts {
                         let pos =
                             if *is_left {
                                 if *is_plus { 0 } else { 1 }
@@ -96,7 +53,12 @@ fn main() {
                         split_stats[pos] = *count as u32;
                     }
 
-                    let score = split_score(split_stats[0], split_stats[1], split_stats[2], split_stats[3]);
+                    let score = split_scoring::split_score(
+                        split_stats[0],
+                        split_stats[1],
+                        split_stats[2],
+                        split_stats[3]
+                    );
 
                     output.push((score, 1));
                 });
@@ -106,7 +68,7 @@ fn main() {
                 .probe()
         });
 
-        let passengers = titanic_data().unwrap();
+        let passengers = titanic::titanic_data().unwrap();
         println!("{} passengers", passengers.len());
 
         for passenger in passengers {
@@ -119,54 +81,4 @@ fn main() {
         worker.step_while(|| probe.less_than(observations_input.time()));
 
     }).unwrap();
-}
-
-fn split_score(
-    num_plus_left: u32,
-    num_minus_left: u32,
-    num_plus_right: u32,
-    num_minus_right: u32)
--> u32 {
-
-    let num_left = num_plus_left + num_minus_left;
-    let num_right = num_plus_right + num_minus_right;
-    let num_plus = num_plus_left + num_plus_right;
-    let num_minus = num_minus_left + num_minus_right;
-
-    let num_samples = num_left + num_right;
-
-    // Prior "classification entropy" H_C(S)
-    let hcs = H(num_plus, num_minus, num_samples);
-
-    // Entropy of S with respect to test T H_T(S)
-    let hts = H(num_left, num_right, num_samples);
-
-    // Posterior "classification entropy" H_{C|T}(S) of S given the outcome of the test T
-    // TODO this is computed twice
-    let p_sys = num_left as f32 / num_samples as f32;
-    let p_sns = num_right as f32 / num_samples as f32;
-
-    let hcsy = H(num_plus_left, num_minus_left, num_left);
-    let hcsn = H(num_plus_right, num_minus_right, num_right);
-
-    let hcts = p_sys * hcsy + p_sns * hcsn;
-
-    // Information gain of applying test T
-    let icts = hcs - hcts;
-
-    let score = 2.0 * icts / (hcs + hts);
-
-    // println!("{}, {}, cut {}, H_C(S) {}, H_T(s) {}, H_C|T(S) {}", min_attribute, max_attribute,
-    //          cut_point, hcs, hts, hcts);
-
-    // println!("{}, {}", cut_point, score);
-
-    (score * 1_000_000_f32) as u32
-}
-
-#[allow(non_snake_case)]
-fn H(a: u32, b: u32, a_plus_b: u32) -> f32 {
-    let p_a = a as f32 / a_plus_b as f32;
-    let p_b = b as f32 / a_plus_b as f32;
-    -(p_a * p_a.log2() + p_b * p_b.log2())
 }
