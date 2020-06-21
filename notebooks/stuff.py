@@ -9,18 +9,20 @@ from utils import binarize
 from etd import ExtremelyRandomizedTrees
 
 
-samples = pd.read_csv('../occupancy.csv')
-#samples['sex_binary'] = samples.apply(lambda row: binarize(row, 'Sex', 'male'), axis=1)
+np.random.seed(42)
+
+samples = pd.read_csv('../titanic.csv')
+samples['sex_binary'] = samples.apply(lambda row: binarize(row, 'Sex', 'male'), axis=1)
 
 
 train_samples, test_samples = train_test_split(samples, test_size=0.2)
 
-trees = ExtremelyRandomizedTrees(num_trees=1, d=5, n_min=3)
+trees = ExtremelyRandomizedTrees(num_trees=100, d=5, n_min=3)
 
 label_attribute = 'Occupancy'
-attribute_candidates = ["Humidity", "Light", "CO2", "HumidityRatio"]
+attribute_candidates = ["Humidity","Light","CO2","HumidityRatio"]
 
-#np.random.seed(42)
+np.random.seed(42)
 clf = trees.fit(train_samples, attribute_candidates, label_attribute)
 
 # print(clf.trees[0].attribute, clf.trees[0].cut_off)

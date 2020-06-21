@@ -36,6 +36,7 @@ class Trees:
 
     def __init__(self, trees):
         self.trees = trees
+        self.num_training_samples = None
 
     def predict(self, data):    
         predicted_classes = []
@@ -60,9 +61,10 @@ class ExtremelyRandomizedTrees:
         self.num_trees = num_trees
         self.d = d
         self.n_min = n_min
+        self.percentiles = {}
 
 
-    def split(self, samples, attribute_candidates, label_attribute, constant_attributes):
+    def split(self, samples, attribute_candidates, label_attribute, constant_attributes, node_id, num_tries=1):
 
         attribute_candidates_for_splitting = []    
         for candidate in attribute_candidates:
@@ -74,6 +76,7 @@ class ExtremelyRandomizedTrees:
             to_take = len(attribute_candidates_for_splitting)
         
         attributes = np.random.choice(attribute_candidates_for_splitting, to_take, replace=False)
+        #attributes = attribute_candidates_for_splitting
         
         max_score = -1        
         the_attribute = None
@@ -89,23 +92,31 @@ class ExtremelyRandomizedTrees:
         for attribute in attributes:
             attribute_values = np.array(samples[attribute])
 
-            min_attribute_value = np.min(attribute_values)
-            max_attribute_value = np.max(attribute_values)
-
-            cut_offs = np.random.uniform(min_attribute_value, max_attribute_value, size=1)    
+            #min_attribute_value = np.min(attribute_values)
+            #max_attribute_value = np.max(attribute_values)
+            #cut_offs = np.random.uniform(min_attribute_value, max_attribute_value, size=1)    
+            cut_offs = np.random.choice(self.percentiles[attribute], 1, replace=False)
 
             for cut_off in cut_offs:
+
                 left_samples = samples[samples[attribute] < cut_off].copy(deep=True)
                 right_samples = samples[samples[attribute] >= cut_off].copy(deep=True)
+
+                #print(cut_off, len(left_samples), len(right_samples))
 
                 num_plus_left = np.sum(left_samples[label_attribute] == 1)
                 num_minus_left = np.sum(left_samples[label_attribute] == 0)
                 num_plus_right = np.sum(right_samples[label_attribute] == 1)
                 num_minus_right = np.sum(right_samples[label_attribute] == 0)
 
+                if num_plus_left == 0 and num_minus_left == 0:
+                    continue    
+                if num_plus_right == 0 and num_minus_right == 0:
+                    continue
+
                 score = split_score(num_plus_left, num_minus_left, num_plus_right, num_minus_right)
                 all_scores.append((attribute, cut_off, score, num_plus_left, num_minus_left, num_plus_right, num_minus_right))
-                all_stats.append(SplitStats(num_plus_left, num_minus_left, num_plus_right, num_minus_right))
+                all_stats.append(SplitStats(attribute, cut_off, num_plus_left, num_minus_left, num_plus_right, num_minus_right))
 
                 if score > max_score:
                     max_score = score
@@ -113,25 +124,40 @@ class ExtremelyRandomizedTrees:
                     the_cutoff = cut_off
                     the_left_samples = left_samples
                     the_right_samples = right_samples     
-                    best_stats = SplitStats(num_plus_left, num_minus_left, num_plus_right, num_minus_right)       
+                    best_stats = SplitStats(attribute, cut_off, num_plus_left, num_minus_left, num_plus_right, num_minus_right)       
         
+        # Try once more
+        if max_score == -1:
+            if num_tries == 10:
+                #print(f"Giving up split selection for {len(samples)} samples")
+                return None, None, None, None, None, None    
+            else:    
+                #print(f"Unable to find good split for {len(samples)} samples after {num_tries}...")
+                return self.split(samples, attribute_candidates, label_attribute, constant_attributes, node_id, num_tries + 1)
+
+        #print("Split inspection")
         min_robustness = None
         for other_stats in all_stats:
             if best_stats != other_stats:
-               curr_robustness = robustness(best_stats, other_stats)
-               if min_robustness is None or curr_robustness < min_robustness:
-                 min_robustness = curr_robustness
-             
+                curr_robustness = robustness(best_stats, other_stats, samples, label_attribute)
 
-        print('attribute:', the_attribute, ', cut_off:',the_cutoff, 
-             ', robustness:', min_robustness, ', num samples:', len(samples))          
+                if curr_robustness <= self.target_robustness:
+                    fraction = (float(len(samples)) / self.num_training_samples) * 100
+                    print(f"Non-robust split ({curr_robustness}) detected at {node_id} on {fraction:.2f}% of the data: {best_stats} VS {other_stats}") 
+
+                if min_robustness is None or curr_robustness < min_robustness:
+                    min_robustness = curr_robustness
+             
+        # if min_robustness is not None and min_robustness < 3:         
+        #     print('attribute:', the_attribute, ', cut_off:',the_cutoff, 
+        #           ', robustness:', min_robustness, ', num samples:', len(samples))          
 
         return the_attribute, the_cutoff, the_left_samples, the_right_samples, max_score, all_scores       
 
 
 
     def stop_split(self, samples, attribute_candidates, label_attribute, known_constant_attributes):
-        
+
         constant_attributes = set()
         for known_constant_attribute in known_constant_attributes:
             constant_attributes.add(known_constant_attribute)
@@ -143,7 +169,7 @@ class ExtremelyRandomizedTrees:
         if len(constant_attributes) == len(attribute_candidates):
             return True, constant_attributes                
 
-        if len(samples) < self.n_min:
+        if len(samples) <= self.n_min:
             return True, constant_attributes
         
         if len(samples[label_attribute].unique()) == 1:
@@ -152,7 +178,7 @@ class ExtremelyRandomizedTrees:
         return False, constant_attributes
 
 
-    def split_node(self, samples, attribute_candidates, label_attribute, known_constant_attributes):
+    def split_node(self, samples, attribute_candidates, label_attribute, known_constant_attributes, node_id):
         
         should_stop, updated_constant_attributes = \
             self.stop_split(samples, attribute_candidates, label_attribute, known_constant_attributes)
@@ -162,29 +188,37 @@ class ExtremelyRandomizedTrees:
             label = num_positive / len(samples[label_attribute])
             
             return Leaf(label)
-        
-        attribute, cut_off, left_samples, right_samples, score, all_scores = \
-            self.split(samples, attribute_candidates, label_attribute, updated_constant_attributes)
-        
-        #print(all_scores)
 
-        if score == 0.0:
+        attribute, cut_off, left_samples, right_samples, score, all_scores = \
+            self.split(samples, attribute_candidates, label_attribute, updated_constant_attributes, node_id)
+        
+        if score == 0.0 or attribute is None:
             
             num_positive = float(np.sum(samples[label_attribute]))
             label = num_positive / len(samples[label_attribute])
             
             return Leaf(label)    
 
-        left_child = self.split_node(left_samples, attribute_candidates, label_attribute, updated_constant_attributes)        
-        right_child = self.split_node(right_samples, attribute_candidates, label_attribute, updated_constant_attributes)
+        left_child = self.split_node(left_samples, attribute_candidates, label_attribute, 
+                                     updated_constant_attributes, node_id + "0")        
+        right_child = self.split_node(right_samples, attribute_candidates, label_attribute, 
+                                      updated_constant_attributes, node_id + "1")
         
         return Split(attribute, cut_off, left_child, right_child)    
 
 
     def fit(self, data, attribute_candidates, label_attribute):
+
+        self.num_training_samples = len(data)
+        self.target_robustness = int(self.num_training_samples / 1000)
+
+        for attribute in attribute_candidates:
+            self.percentiles[attribute] = np.percentile(data[attribute].values, range(5, 100, 5))
+
+            
         trees = []
         for num_trees_fitted in range(0, self.num_trees):
-            trees.append(self.split_node(data, attribute_candidates, label_attribute, set()))       
+            trees.append(self.split_node(data, attribute_candidates, label_attribute, set(), "0"))       
             print(num_trees_fitted + 1, " trees fitted")
 
         return Trees(trees)                

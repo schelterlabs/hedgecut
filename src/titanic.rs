@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 #[derive(Debug)]
 pub struct Passenger {
+    pub index: u32,
     pub survived: bool,
     pub class: u8,
     pub male: bool,
@@ -22,6 +23,7 @@ pub fn titanic_data() -> Result<Vec<Passenger>, Box<dyn Error>> {
 
     let mut passengers = Vec::with_capacity(887);
 
+    let mut index: u32  = 0;
     for result in reader.records() {
         let record = result?;
 
@@ -33,9 +35,11 @@ pub fn titanic_data() -> Result<Vec<Passenger>, Box<dyn Error>> {
         let parents: u8 = u8::from_str(record.get(6).unwrap()).unwrap();
         let fare: u32 = (f32::from_str(record.get(7).unwrap()).unwrap() * 10000_f32) as u32;
 
-        let passenger = Passenger { survived, class, male, age, siblings, parents, fare };
+        let passenger = Passenger { index, survived, class, male, age, siblings, parents, fare };
 
         passengers.push(passenger);
+
+        index += 1;
     }
 
     Ok(passengers)

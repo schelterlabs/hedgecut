@@ -1,84 +1,81 @@
-extern crate timely;
-extern crate differential_dataflow;
+#[macro_use]
+extern crate ndarray;
 extern crate rand;
 
+use ndarray::prelude::*;
 use rand::Rng;
-use differential_dataflow::input::InputSession;
-use differential_dataflow::operators::{Reduce, Join, CountTotal};
 
 mod titanic;
 mod split_scoring;
 
+use titanic::Passenger;
+use split_scoring::split_score;
+
+fn split<F>(samples: &Vec<Passenger>, extract_func: F)
+    where F: Fn(&Passenger) -> (u8, bool)
+{
+
+    let attribute_and_label: Vec<_> = samples.iter()
+        .map(|sample| extract_func(sample))
+        .collect();
+
+    // TODO Can be collected in single pass
+    let min_attribute = attribute_and_label.iter().map(|(attribute, _)| attribute).min().unwrap();
+    let max_attribute = attribute_and_label.iter().map(|(attribute, _)| attribute).max().unwrap();
+
+    let mut rng = rand::thread_rng();
+
+    let cut_point = rng.gen_range(min_attribute, max_attribute);
+
+    let mut num_plus_left = 0_u32;
+    let mut num_minus_left = 0_u32;
+    let mut num_plus_right = 0_u32;
+    let mut num_minus_right = 0_u32;
+
+    // TODO can be simplified maybe
+    attribute_and_label.iter().for_each(|(age, class)| {
+        if *age <= cut_point {
+            if *class {
+                num_plus_left += 1;
+            } else {
+                num_minus_left += 1;
+            }
+        } else {
+            if *class {
+                num_plus_right += 1;
+            } else {
+                num_minus_right += 1;
+            }
+        }
+    });
+
+    let score = split_score(num_plus_left, num_minus_left, num_minus_right, num_minus_right);
+
+    println!("{}", score);
+}
+
+
 fn main() {
 
-    timely::execute_from_args(std::env::args(), move |worker| {
+    let passengers = titanic::titanic_data().unwrap();
 
-        let mut observations_input = InputSession::new();
+    println!("{} passengers", passengers.len());
 
-        let probe = worker.dataflow(|scope| {
+    //let extract_age = |passenger: &Passenger| (passenger.age, passenger.survived);
 
-            let observations = observations_input.to_collection(scope);
+    let mut ages: Vec<(u32, u8)> = passengers.iter()
+        .map(|passenger| (passenger.index, passenger.age))
+        .collect();
 
-            let random_cut = observations
-                .map(|(attribute, _label)| ((), attribute))
-                .reduce(|_, attribute_recs, output| {
+    ages.sort_unstable_by_key(|r| r.1);
 
-                    // TODO DD should be aware of the semantics here
-                    let min_attr = attribute_recs.iter().map(|(attr, _)| **attr).min().unwrap();
-                    let max_attr = attribute_recs.iter().map(|(attr, _)| **attr).max().unwrap();
+    let step_size = ages.len() / 16;
 
-                    let cut_point = rand::thread_rng().gen_range(min_attr, max_attr);
+    println!("{}", step_size);
 
-                    output.push((cut_point, 1))
-                });
 
-            let counts = observations
-                .map(|(attribute, label)| ((), (attribute, label)))
-                .join_map(&random_cut, |_, (attribute, label), cut| (*attribute <= *cut, *label))
-                .count_total();
+    //split(&passengers, extract_age);
+     // M number of trees in ensemble, n_min minimal number of samples per leaf,
+     // K number of attributes to test for splits
 
-            let scores = counts
-                .map(|((side, label), count)| ((), (side, label, count)))
-                .reduce(|_, side_label_counts, output| {
-                    let mut split_stats = [0_u32; 4];
-
-                    for ((is_left, is_plus, count), _) in side_label_counts {
-                        let pos =
-                            if *is_left {
-                                if *is_plus { 0 } else { 1 }
-                            } else {
-                                if *is_plus { 2 } else { 3 }
-                            };
-
-                        split_stats[pos] = *count as u32;
-                    }
-
-                    let score = split_scoring::split_score(
-                        split_stats[0],
-                        split_stats[1],
-                        split_stats[2],
-                        split_stats[3]
-                    );
-
-                    output.push((score, 1));
-                });
-
-            scores
-                .inspect(|x| println!("\t{:?}", x))
-                .probe()
-        });
-
-        let passengers = titanic::titanic_data().unwrap();
-        println!("{} passengers", passengers.len());
-
-        for passenger in passengers {
-            observations_input.insert((passenger.age, passenger.survived))
-        }
-
-        observations_input.advance_to(0);
-        observations_input.flush();
-
-        worker.step_while(|| probe.less_than(observations_input.time()));
-
-    }).unwrap();
 }
