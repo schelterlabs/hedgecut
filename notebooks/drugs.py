@@ -22,7 +22,7 @@ samples = pd.read_csv('drugs.csv', names=names)
 
 
 
-samples['label'] = samples.apply(lambda row: binarize(row, 'Ecstasy', ['CL3', 'CL4', 'CL5', 'CL6']), axis=1)
+samples['label'] = samples.apply(lambda row: binarize(row, 'Coke', ['CL3', 'CL4', 'CL5', 'CL6']), axis=1)
 
 # print(len(samples))
 # print(np.sum(samples['label']))

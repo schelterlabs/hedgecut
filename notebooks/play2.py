@@ -20,8 +20,22 @@ trees = ExtremelyRandomizedTrees(num_trees=1, d=5, n_min=3)
 label_attribute = 'Occupancy'
 attribute_candidates = ["Humidity", "Light", "CO2", "HumidityRatio"]
 
-#np.random.seed(42)
+
+# 1 really bad case
+# 5 bad case
+# 8,14 minor case
+
+np.random.seed(1)
 clf = trees.fit(train_samples, attribute_candidates, label_attribute)
+
+for row in [88]:#range(1, 100):
+
+	print("Testing forgetting of", row)
+	sample_to_forget = train_samples.iloc[row]
+	label_to_forget = sample_to_forget[label_attribute]
+
+	clf.forget(sample_to_forget, label_to_forget)
+
 
 # print(clf.trees[0].attribute, clf.trees[0].cut_off)
 # print('\t', clf.trees[0].left_node.attribute, clf.trees[0].left_node.cut_off)

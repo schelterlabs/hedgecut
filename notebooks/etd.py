@@ -2,11 +2,13 @@ import numpy as np
 from scoring import H, split_score, SplitStats, robustness
 
 class Split:
-    def __init__(self, attribute, cut_off, left_node, right_node):
+    def __init__(self, attribute, cut_off, left_node, right_node, stats=None, branching_candidates=None):
         self.attribute = attribute
         self.cut_off = cut_off
         self.left_node = left_node
         self.right_node = right_node
+        self.stats = stats
+        self.branching_candidates = branching_candidates
         
     def predict(self, sample):
         if sample[self.attribute] < self.cut_off:
@@ -14,15 +16,41 @@ class Split:
         else:
             return self.right_node.predict(sample)      
         
+    def forget(self, sample, label):
+
+        #if self.branching_candidates is None:
+            #print("Invoking forgetting procedure on robust split")
+
+        #else:    
+        if self.branching_candidates is not None:
+            print("Invoking forgetting procedure on NON-ROBUST split")
+
+        if sample[self.attribute] < self.cut_off:
+            return self.left_node.forget(sample, label)
+        else:
+            return self.right_node.forget(sample, label)   
+
     def __str__(self):
         return 'Split(' + str(self.attribute) + ', ' + str(self.cut_off) + \
             ', [' + str(self.left_node) + ', ' +  str(self.right_node) + '])'
         
 class Leaf:
-    def __init__(self, label):
-        self.label = label
+    def __init__(self, num_positive, num_samples):
+        self.num_positive = num_positive
+        self.num_samples = num_samples
+
+    def forget(self, sample, label):
+        #print("Invoking forgetting procedure on leaf")
+
+        if label == 1:
+            self.num_positive -= 1
+
+        self.num_samples -= 1
 
     def predict(self, sample):
+
+        label = float(self.num_positive) / self.num_samples
+
         if self.label > 0.5:
             return 1
         else: 
@@ -37,6 +65,11 @@ class Trees:
     def __init__(self, trees):
         self.trees = trees
         self.num_training_samples = None
+
+
+    def forget(self, sample, label):
+        for tree in self.trees:
+            tree.forget(sample, label)
 
     def predict(self, data):    
         predicted_classes = []
@@ -91,10 +124,7 @@ class ExtremelyRandomizedTrees:
 
         for attribute in attributes:
             attribute_values = np.array(samples[attribute])
-
-            #min_attribute_value = np.min(attribute_values)
-            #max_attribute_value = np.max(attribute_values)
-            #cut_offs = np.random.uniform(min_attribute_value, max_attribute_value, size=1)    
+ 
             cut_offs = np.random.choice(self.percentiles[attribute], 1, replace=False)
 
             for cut_off in cut_offs:
@@ -128,12 +158,13 @@ class ExtremelyRandomizedTrees:
         
         # Try once more
         if max_score == -1:
-            if num_tries == 10:
+            if num_tries == 25:
                 #print(f"Giving up split selection for {len(samples)} samples")
-                return None, None, None, None, None, None    
+                return None, None, None, None, None, None, None, None
             else:    
-                #print(f"Unable to find good split for {len(samples)} samples after {num_tries}...")
                 return self.split(samples, attribute_candidates, label_attribute, constant_attributes, node_id, num_tries + 1)
+
+        branching_candidates = []        
 
         #print("Split inspection")
         min_robustness = None
@@ -142,8 +173,13 @@ class ExtremelyRandomizedTrees:
                 curr_robustness = robustness(best_stats, other_stats, samples, label_attribute)
 
                 if curr_robustness <= self.target_robustness:
-                    fraction = (float(len(samples)) / self.num_training_samples) * 100
-                    print(f"Non-robust split ({curr_robustness}) detected at {node_id} on {fraction:.2f}% of the data: {best_stats} VS {other_stats}") 
+
+                    if num_tries < 25:
+                        return self.split(samples, attribute_candidates, label_attribute, constant_attributes, node_id, num_tries + 1)
+                    else:    
+                        fraction = (float(len(samples)) / self.num_training_samples) * 100
+                        print(f"Non-robust split ({curr_robustness}) detected at {node_id} on {fraction:.2f}% of the data: {best_stats} VS {other_stats}") 
+                        branching_candidates.append(other_stats)
 
                 if min_robustness is None or curr_robustness < min_robustness:
                     min_robustness = curr_robustness
@@ -152,7 +188,7 @@ class ExtremelyRandomizedTrees:
         #     print('attribute:', the_attribute, ', cut_off:',the_cutoff, 
         #           ', robustness:', min_robustness, ', num samples:', len(samples))          
 
-        return the_attribute, the_cutoff, the_left_samples, the_right_samples, max_score, all_scores       
+        return the_attribute, the_cutoff, the_left_samples, the_right_samples, max_score, all_scores, best_stats, branching_candidates       
 
 
 
@@ -183,29 +219,28 @@ class ExtremelyRandomizedTrees:
         should_stop, updated_constant_attributes = \
             self.stop_split(samples, attribute_candidates, label_attribute, known_constant_attributes)
 
-        if should_stop:            
-            num_positive = float(np.sum(samples[label_attribute]))
-            label = num_positive / len(samples[label_attribute])
-            
-            return Leaf(label)
+        if should_stop:                      
+            return Leaf(num_positive=np.sum(samples[label_attribute]), 
+                        num_samples=len(samples[label_attribute]))
 
-        attribute, cut_off, left_samples, right_samples, score, all_scores = \
+        attribute, cut_off, left_samples, right_samples, score, all_scores, best_stats, branching_candidates = \
             self.split(samples, attribute_candidates, label_attribute, updated_constant_attributes, node_id)
         
-        if score == 0.0 or attribute is None:
-            
-            num_positive = float(np.sum(samples[label_attribute]))
-            label = num_positive / len(samples[label_attribute])
-            
-            return Leaf(label)    
+        if score == 0.0 or attribute is None:            
+            return Leaf(num_positive=np.sum(samples[label_attribute]), 
+                        num_samples=len(samples[label_attribute]))  
 
         left_child = self.split_node(left_samples, attribute_candidates, label_attribute, 
                                      updated_constant_attributes, node_id + "0")        
         right_child = self.split_node(right_samples, attribute_candidates, label_attribute, 
                                       updated_constant_attributes, node_id + "1")
         
-        return Split(attribute, cut_off, left_child, right_child)    
 
+        if len(branching_candidates) > 0:
+            return Split(attribute, cut_off, left_child, right_child, 
+                         stats=best_stats, branching_candidates=branching_candidates)    
+        else:    
+            return Split(attribute, cut_off, left_child, right_child)    
 
     def fit(self, data, attribute_candidates, label_attribute):
 
@@ -219,6 +254,6 @@ class ExtremelyRandomizedTrees:
         trees = []
         for num_trees_fitted in range(0, self.num_trees):
             trees.append(self.split_node(data, attribute_candidates, label_attribute, set(), "0"))       
-            print(num_trees_fitted + 1, " trees fitted")
+            print(num_trees_fitted + 1, " trees fitted with target robustness " + str(self.target_robustness))
 
         return Trees(trees)                
