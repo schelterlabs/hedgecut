@@ -1,15 +1,17 @@
 import numpy as np
-from scoring import H, split_score, SplitStats, robustness
+from scoring import H, split_score, SplitStats, robustness, split_score_from_stats
 
 class Split:
-    def __init__(self, attribute, cut_off, left_node, right_node, stats=None, branching_candidates=None):
+    def __init__(self, attribute, cut_off, left_node, right_node, stats=None, 
+                 branching_candidates=None, branching_splits=None):
         self.attribute = attribute
         self.cut_off = cut_off
         self.left_node = left_node
         self.right_node = right_node
         self.stats = stats
         self.branching_candidates = branching_candidates
-        
+        self.branching_splits = branching_splits
+
     def predict(self, sample):
         if sample[self.attribute] < self.cut_off:
             return self.left_node.predict(sample)
@@ -18,12 +20,60 @@ class Split:
         
     def forget(self, sample, label):
 
-        #if self.branching_candidates is None:
-            #print("Invoking forgetting procedure on robust split")
-
-        #else:    
         if self.branching_candidates is not None:
-            print("Invoking forgetting procedure on NON-ROBUST split")
+            #print("Invoking forgetting procedure on NON-ROBUST split")
+
+            #print("best before", split_score_from_stats(self.stats))
+
+            # TODO update stats
+            if sample[self.attribute] <= self.cut_off:
+                if label == 1:
+                    self.stats.num_plus_left -= 1
+                else:    
+                    self.stats.num_minus_left -= 1
+            else:        
+                if label == 1:
+                    self.stats.num_plus_right -= 1
+                else:    
+                    self.stats.num_minus_right -= 1                
+            # TODO restructure if needed
+
+            best_score_after = split_score_from_stats(self.stats)
+
+            #print("best after", best_score_after)
+
+            candidate_stats_to_remove = []
+            for candidate_stats in self.branching_candidates:    
+                #print("candidate before", split_score_from_stats(candidate_stats))
+
+                # TODO update stats
+                if sample[self.attribute] <= self.cut_off:
+                    if label == 1:
+                        candidate_stats.num_plus_left -= 1
+                    else:    
+                        candidate_stats.num_minus_left -= 1
+                else:        
+                    if label == 1:
+                        candidate_stats.num_plus_right -= 1
+                    else:    
+                        candidate_stats.num_minus_right -= 1                
+                # TODO restructure if needed
+
+                if candidate_stats.num_plus_left >= 0 and candidate_stats.num_minus_left >= 0 and \
+                    candidate_stats.num_plus_right >= 0 and candidate_stats.num_minus_right >= 0:
+
+                    candidate_score_after = split_score_from_stats(candidate_stats)
+                    #print("candidate after", candidate_score_after)
+
+                    if candidate_score_after > best_score_after:
+                        print("!!!!!!!!!!!!!!!!!!!!!!REORGANISATION REQUIRED!!!!!!!!!!!!!!!!!!!")     
+                else:
+                    print("Invalidating split candidate", candidate_stats)           
+                    candidate_stats_to_remove.append(candidate_stats)                   
+
+            for stats_to_remove in candidate_stats_to_remove:
+                self.branching_candidates.remove(stats_to_remove)        
+
 
         if sample[self.attribute] < self.cut_off:
             return self.left_node.forget(sample, label)
@@ -51,7 +101,7 @@ class Leaf:
 
         label = float(self.num_positive) / self.num_samples
 
-        if self.label > 0.5:
+        if label > 0.5:
             return 1
         else: 
             return 0             
@@ -237,15 +287,47 @@ class ExtremelyRandomizedTrees:
         
 
         if len(branching_candidates) > 0:
+
+
+            branching_splits = []
+            for branching_candidate in branching_candidates:
+
+                print("Building alternate subtree at ", node_id)
+
+                attribute_branch = branching_candidate.attribute
+                cut_off_branch = branching_candidate.cut_off
+
+                # This duplicates work already done...
+                left_samples_branch = samples[samples[attribute_branch] < cut_off_branch].copy(deep=True)
+                right_samples_branch = samples[samples[attribute_branch] >= cut_off_branch].copy(deep=True)
+
+                left_child_branch = self.split_node(left_samples_branch, attribute_candidates, 
+                                                    label_attribute, updated_constant_attributes, 
+                                                    node_id + "0")        
+                right_child_branch = self.split_node(right_samples_branch, attribute_candidates, 
+                                                     label_attribute, updated_constant_attributes, 
+                                                     node_id + "1")
+
+                # TODO could there be cases where we need to branch twice?
+                branching_split = Split(attribute_branch, cut_off_branch, left_child_branch, 
+                    right_child_branch)
+
+                branching_splits.append(branching_split)
+                # TODO link into tree        
+
             return Split(attribute, cut_off, left_child, right_child, 
-                         stats=best_stats, branching_candidates=branching_candidates)    
+                         stats=best_stats, branching_candidates=branching_candidates, 
+                         branching_splits=branching_splits)    
+
+
+
         else:    
             return Split(attribute, cut_off, left_child, right_child)    
 
     def fit(self, data, attribute_candidates, label_attribute):
 
         self.num_training_samples = len(data)
-        self.target_robustness = int(self.num_training_samples / 1000)
+        self.target_robustness = np.max([int(self.num_training_samples / 1000), 1])
 
         for attribute in attribute_candidates:
             self.percentiles[attribute] = np.percentile(data[attribute].values, range(5, 100, 5))

@@ -62,6 +62,10 @@ def split_score_gini(num_plus_left, num_minus_left, num_plus_right, num_minus_ri
 
     return 1. - ((p1 * (1-p1) + (p2 * (1 - p2))))  
 
+def split_score_from_stats(stats):
+    return split_score(stats.num_plus_left, stats.num_minus_left, stats.num_plus_right, 
+        stats.num_minus_right)
+
 
 def split_score(num_plus_left, num_minus_left, num_plus_right, num_minus_right):
     assert num_plus_left >= 0
