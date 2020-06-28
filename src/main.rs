@@ -1,81 +1,164 @@
-#[macro_use]
-extern crate ndarray;
-extern crate rand;
+extern crate csv;
 
-use ndarray::prelude::*;
-use rand::Rng;
+use std::str::FromStr;
 
-mod titanic;
-mod split_scoring;
+mod split_stats;
 
-use titanic::Passenger;
-use split_scoring::split_score;
+use split_stats::SplitStats;
 
-fn split<F>(samples: &Vec<Passenger>, extract_func: F)
-    where F: Fn(&Passenger) -> (u8, bool)
-{
+struct SplitCandidate<'a> {
+    pub attribute: &'a Vec<u8>,
+    pub cut_off: u8,
+}
 
-    let attribute_and_label: Vec<_> = samples.iter()
-        .map(|sample| extract_func(sample))
-        .collect();
+impl SplitCandidate<'_> {
+    pub fn new(attribute: &Vec<u8>, cut_off: u8) -> SplitCandidate {
+        SplitCandidate { attribute, cut_off }
+    }
+}
 
-    // TODO Can be collected in single pass
-    let min_attribute = attribute_and_label.iter().map(|(attribute, _)| attribute).min().unwrap();
-    let max_attribute = attribute_and_label.iter().map(|(attribute, _)| attribute).max().unwrap();
+struct TitanicDataset {
+    pub age: Vec<u8>,
+    pub fare: Vec<u8>,
+    pub siblings: Vec<u8>,
+    pub children: Vec<u8>,
+    pub gender: Vec<u8>,
+    pub pclass: Vec<u8>,
+    pub labels: Vec<bool>,
+}
 
-    let mut rng = rand::thread_rng();
+impl TitanicDataset {
 
-    let cut_point = rng.gen_range(min_attribute, max_attribute);
-
-    let mut num_plus_left = 0_u32;
-    let mut num_minus_left = 0_u32;
-    let mut num_plus_right = 0_u32;
-    let mut num_minus_right = 0_u32;
-
-    // TODO can be simplified maybe
-    attribute_and_label.iter().for_each(|(age, class)| {
-        if *age <= cut_point {
-            if *class {
-                num_plus_left += 1;
-            } else {
-                num_minus_left += 1;
-            }
-        } else {
-            if *class {
-                num_plus_right += 1;
-            } else {
-                num_minus_right += 1;
-            }
-        }
-    });
-
-    let score = split_score(num_plus_left, num_minus_left, num_minus_right, num_minus_right);
-
-    println!("{}", score);
 }
 
 
 fn main() {
 
-    let passengers = titanic::titanic_data().unwrap();
+    let num_records = 886;
 
-    println!("{} passengers", passengers.len());
+    let mut age: Vec<u8> = Vec::with_capacity(num_records);
+    let mut fare: Vec<u8> = Vec::with_capacity(num_records);
+    let mut siblings: Vec<u8> = Vec::with_capacity(num_records);
+    let mut children: Vec<u8> = Vec::with_capacity(num_records);
+    let mut gender: Vec<u8> = Vec::with_capacity(num_records);
+    let mut pclass: Vec<u8> = Vec::with_capacity(num_records);
 
-    //let extract_age = |passenger: &Passenger| (passenger.age, passenger.survived);
+    let mut labels: Vec<bool> = Vec::with_capacity(num_records);
 
-    let mut ages: Vec<(u32, u8)> = passengers.iter()
-        .map(|passenger| (passenger.index, passenger.age))
+    let mut reader = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .delimiter(b'\t')
+        .from_path("titanic-attributes.csv")
+        .unwrap();
+
+    for result in reader.records() {
+        let record = result.unwrap();
+
+        let record_id: u32 = u32::from_str(record.get(0).unwrap()).unwrap();
+        let attribute_name = record.get(1).unwrap();
+        let attribute_value = u8::from_str(record.get(2).unwrap()).unwrap();
+
+        match attribute_name {
+            "age" => age.insert(record_id as usize, attribute_value),
+            "fare" => fare.insert(record_id as usize, attribute_value),
+            "siblings" => siblings.insert(record_id as usize, attribute_value),
+            "children" => children.insert(record_id as usize, attribute_value),
+            "gender" => gender.insert(record_id as usize, attribute_value),
+            "pclass" => pclass.insert(record_id as usize, attribute_value),
+            "label" => labels.insert(record_id as usize, attribute_value == 1),
+
+            _ => println!("UNKNOWN ATTRIBUTE ENCOUNTERED")
+        }
+    }
+
+    let mut record_ids_to_split: Vec<u32> = Vec::with_capacity(num_records);
+    for record_id in 0 .. num_records {
+        record_ids_to_split.push(record_id as u32);
+    }
+
+    let split_candidates = vec![
+        SplitCandidate::new(&age, 5),
+        SplitCandidate::new(&fare, 12),
+        SplitCandidate::new(&children, 3),
+        SplitCandidate::new(&gender, 1),
+    ];
+
+    let split_stats: Vec<SplitStats> = split_candidates.iter()
+        .map(|candidate| compute_split_stats(&record_ids_to_split, &candidate, &labels))
         .collect();
 
-    ages.sort_unstable_by_key(|r| r.1);
+    let maybe_best_split_stats = split_stats.iter().enumerate()
+        .filter(|(_, stats)| stats.score.is_some())
+        .max_by(|(_, stats1), (_, stats2)| stats1.score.unwrap().cmp(&stats2.score.unwrap()));
 
-    let step_size = ages.len() / 16;
+    if maybe_best_split_stats.is_none() {
+        //TODO Handle this case
+    }
 
-    println!("{}", step_size);
+    let (index_of_best_stats, best_split_stats) = maybe_best_split_stats.unwrap();
 
+    let best_split_candidate = split_candidates.get(index_of_best_stats).unwrap();
 
-    //split(&passengers, extract_age);
-     // M number of trees in ensemble, n_min minimal number of samples per leaf,
-     // K number of attributes to test for splits
+    println!("Best split {:?}", best_split_stats);
+
+    let (record_ids_left, record_ids_right) = split(
+        record_ids_to_split,
+        &best_split_candidate,
+        &best_split_stats);
+
 
 }
+
+fn compute_split_stats(
+    record_ids_to_split: &Vec<u32>,
+    split_candidate: &SplitCandidate,
+    labels: &Vec<bool>
+) -> SplitStats {
+    let mut split_stats = SplitStats::new();
+
+    let attribute_to_split_on = split_candidate.attribute;
+    let cut_off = split_candidate.cut_off;
+
+    for record_id in record_ids_to_split {
+        // TODO Remove boundary checks here later
+        let plus = *labels.get(*record_id as usize).unwrap();
+        // TODO We could check here if the values are constant as well
+        let is_left = *attribute_to_split_on.get(*record_id as usize).unwrap() < cut_off;
+
+        split_stats.update(plus, is_left);
+    }
+
+    split_stats.update_score();
+
+    split_stats
+}
+
+fn split(
+    record_ids_to_split: Vec<u32>,
+    split_candidate: &SplitCandidate,
+    split_stats: &SplitStats
+) -> (Vec<u32>, Vec<u32>) {
+
+    let attribute_to_split_on = split_candidate.attribute;
+    let cut_off = split_candidate.cut_off;
+
+    // TODO We copy here for safety, should reuse the allocated vector later
+    let num_left = split_stats.num_plus_left + split_stats.num_minus_left;
+    let mut record_ids_left = Vec::with_capacity(num_left as usize);
+
+    let num_right = split_stats.num_plus_right + split_stats.num_minus_right;
+    let mut record_ids_right = Vec::with_capacity(num_right as usize);
+
+    for record_id in record_ids_to_split {
+        let is_left = *attribute_to_split_on.get(record_id as usize).unwrap() < cut_off;
+
+        if is_left {
+            record_ids_left.push(record_id);
+        } else {
+            record_ids_right.push(record_id);
+        }
+    }
+
+    (record_ids_left, record_ids_right)
+}
+
