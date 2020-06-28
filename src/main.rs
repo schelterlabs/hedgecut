@@ -1,14 +1,16 @@
 extern crate csv;
 extern crate rand;
 
+use std::collections::HashMap;
+use rand::seq::SliceRandom;
+use rand::Rng;
+
 mod split_stats;
 mod dataset;
 
 use split_stats::SplitStats;
 use dataset::{Dataset, TitanicDataset};
 
-use rand::seq::SliceRandom;
-use rand::Rng;
 
 struct SplitCandidate {
     pub attribute_index: u8,
@@ -21,8 +23,52 @@ impl SplitCandidate {
     }
 }
 
+#[derive(Eq,PartialEq,Debug)]
+enum TreeElement {
+    Node { attribute_index: u8, cut_off: u8 },
+    Leaf { num_samples: u32, num_plus: u32 }
+}
 
+struct Tree {
+    elements: HashMap<u32, TreeElement>
+}
 
+trait Sample {
+    fn is_smaller_than(&self, attribute_index: u8, cut_off: u8) -> bool;
+}
+
+impl Tree {
+    fn new(elements: HashMap<u32, TreeElement>) -> Tree {
+        Tree { elements }
+    }
+
+    fn predict<S: Sample>(&self, sample: &S) -> bool {
+
+        let mut element_id = 1;
+
+        loop {
+
+            let element = self.elements.get(&element_id).unwrap();
+
+            match element {
+
+                TreeElement::Node { attribute_index, cut_off } => {
+                    if sample.is_smaller_than(*attribute_index, *cut_off) {
+                        element_id = element_id * 2;
+                    } else {
+                        element_id = (element_id * 2) + 1;
+                    }
+                }
+
+                TreeElement::Leaf { num_samples, num_plus } => {
+                    //TODO implement
+                    return true
+                }
+            }
+        }
+    }
+
+}
 
 fn main() {
 
@@ -30,15 +76,19 @@ fn main() {
 
     let record_ids_to_split: Vec<u32> = (0 .. dataset.num_records()).collect();
 
-    determine_split(record_ids_to_split, &dataset, 0, Vec::new());
+    let mut tree: HashMap<u32, TreeElement> = HashMap::new();
+
+    determine_split(&mut tree, record_ids_to_split, &dataset, 1, 0, Vec::new());
+
+    tree.iter().for_each(|(id, elem)| {
+       println!("{}: {:?}", id, elem);
+    });
 }
 
-fn determine_split<D: Dataset>(
-    record_ids_to_split: Vec<u32>,
+fn generate_random_split_candidates<D: Dataset>(
     dataset: &D,
-    num_tries: u8,
-    constant_attribute_indexes: Vec<u8>
-) {
+    constant_attribute_indexes: &Vec<u8>
+) -> Vec<SplitCandidate> {
 
     let mut rng = rand::thread_rng();
 
@@ -55,9 +105,23 @@ fn determine_split<D: Dataset>(
         .map(|attribute_index| {
             let random_cut_off = rng.gen_range(0_u8, 20_u8);
 
-            SplitCandidate::new(*attribute_index, /*random_attribute,*/ random_cut_off)
+            SplitCandidate::new(*attribute_index, random_cut_off)
         })
         .collect();
+
+    split_candidates
+}
+
+fn determine_split<D: Dataset>(
+    tree: &mut HashMap<u32, TreeElement>,
+    record_ids_to_split: Vec<u32>,
+    dataset: &D,
+    current_id: u32,
+    num_tries: u8,
+    constant_attribute_indexes: Vec<u8>
+) {
+
+    let split_candidates = generate_random_split_candidates(dataset, &constant_attribute_indexes);
 
     //TODO we could try to check the split attribute first (if we have it again)
     //TODO as it might be still in caches
@@ -75,8 +139,10 @@ fn determine_split<D: Dataset>(
     if maybe_best_split_stats.is_none() {
         if num_tries < 25 {
             determine_split(
+                tree,
                 record_ids_to_split,
                 dataset,
+                current_id,
                 num_tries + 1,
                 constant_attribute_indexes.clone() // TODO try to get rid of the clone here
             );
@@ -107,8 +173,25 @@ fn determine_split<D: Dataset>(
     let label_constant_on_the_left =
         best_split_stats.num_minus_left == 0 || best_split_stats.num_plus_left == 0;
 
+    let node = TreeElement::Node {
+        attribute_index: best_split_candidate.attribute_index,
+        cut_off: best_split_candidate.cut_off
+    };
+
+    tree.insert(current_id, node);
+
+    let left_child_id = current_id * 2;
+
     if record_ids_left.len() <= min_leaf_size || label_constant_on_the_left {
         println!("Building leaf for {} records", record_ids_left.len());
+
+        let leaf = TreeElement::Leaf {
+            num_samples: best_split_stats.num_plus_left + best_split_stats.num_minus_left,
+            num_plus: best_split_stats.num_plus_left
+        };
+
+        tree.insert(left_child_id, leaf);
+
     } else {
 
         // TODO get rid of the clone here
@@ -118,15 +201,32 @@ fn determine_split<D: Dataset>(
             constant_attribute_indexes_left.push(best_split_candidate.attribute_index)
         }
 
-        determine_split(record_ids_left, dataset, 0, constant_attribute_indexes_left);
+        determine_split(
+            tree,
+            record_ids_left,
+            dataset,
+            left_child_id,
+            0,
+            constant_attribute_indexes_left
+        );
     }
 
     // TODO move into conditional block
     let label_constant_on_the_right =
         best_split_stats.num_minus_right == 0 || best_split_stats.num_plus_right == 0;
 
+    let right_child_id = (current_id * 2) + 1;
+
     if record_ids_right.len() <= min_leaf_size || label_constant_on_the_right {
         println!("Building leaf for {} records", record_ids_right.len());
+
+        let leaf = TreeElement::Leaf {
+            num_samples: best_split_stats.num_plus_left + best_split_stats.num_minus_left,
+            num_plus: best_split_stats.num_plus_left
+        };
+
+        tree.insert(right_child_id, leaf);
+
     } else {
 
         // TODO get rid of the clone here
@@ -136,7 +236,14 @@ fn determine_split<D: Dataset>(
             constant_attribute_indexes_right.push(best_split_candidate.attribute_index)
         }
 
-        determine_split(record_ids_right, dataset, 0, constant_attribute_indexes_right);
+        determine_split(
+            tree,
+            record_ids_right,
+            dataset,
+            right_child_id,
+            0,
+            constant_attribute_indexes_right
+        );
     }
 }
 
