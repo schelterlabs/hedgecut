@@ -7,6 +7,11 @@ pub trait Dataset {
     fn labels(&self) -> &Vec<bool>;
 }
 
+pub trait Sample {
+    fn is_smaller_than(&self, attribute_index: u8, cut_off: u8) -> bool;
+    fn true_label(&self) -> bool;
+}
+
 pub struct TitanicDataset {
     pub age: Vec<u8>,
     pub fare: Vec<u8>,
@@ -15,6 +20,36 @@ pub struct TitanicDataset {
     pub gender: Vec<u8>,
     pub pclass: Vec<u8>,
     pub labels: Vec<bool>,
+}
+
+pub struct TitanicSample {
+    pub age: u8,
+    pub fare: u8,
+    pub siblings: u8,
+    pub children: u8,
+    pub gender: u8,
+    pub pclass: u8,
+    pub label: bool,
+}
+
+impl Sample for TitanicSample {
+    fn is_smaller_than(&self, attribute_index: u8, cut_off: u8) -> bool {
+        let attribute = match attribute_index {
+            0 => &self.age,
+            1 => &self.fare,
+            2 => &self.siblings,
+            3 => &self.children,
+            4 => &self.gender,
+            5 => &self.pclass,
+            _ => panic!("Requested non exsting attribute!")
+        };
+
+        *attribute < cut_off
+    }
+
+    fn true_label(&self) -> bool {
+        self.label
+    }
 }
 
 
