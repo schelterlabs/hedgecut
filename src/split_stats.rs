@@ -53,8 +53,6 @@ fn normalized_information_gain(
     num_minus_right: u32)
     -> Option<u64> {
 
-    println!("[{},{},{},{}]", num_plus_left, num_minus_left, num_plus_right, num_minus_right);
-
     let num_left = num_plus_left + num_minus_left;
     let num_right = num_plus_right + num_minus_right;
 
@@ -89,14 +87,34 @@ fn normalized_information_gain(
 
     let score = 2.0 * icts / (hcs + hts);
 
-    println!("H_C(S) {}, H_T(s) {}, H_C|T(S) {}, Score {}", hcs, hts, hcts, score);
+    if score.is_nan() {
+        println!("[{},{},{},{}]", num_plus_left, num_minus_left, num_plus_right, num_minus_right);
+        println!("H_C(S) {}, H_T(s) {}, H_C|T(S) {}, Score {}", hcs, hts, hcts, score);
+        panic!("Invalid score encountered!");
+    }
+
+    //println!("H_C(S) {}, H_T(s) {}, H_C|T(S) {}, Score {}", hcs, hts, hcts, score);
 
     Some((score * 1_000_000_000_000_f64) as u64)
 }
 
 #[allow(non_snake_case)]
 fn H(a: u32, b: u32, a_plus_b: u32) -> f64 {
-    let p_a = a as f64 / a_plus_b as f64;
-    let p_b = b as f64 / a_plus_b as f64;
-    -(p_a * p_a.log2() + p_b * p_b.log2())
+
+    //TODO we could precompute the logarithms for small numbers
+    let p_a_times_log_of_pa = if a != 0 {
+        let p_a = a as f64 / a_plus_b as f64;
+        p_a * p_a.log2()
+    } else {
+        0.0
+    };
+
+    let p_b_times_log_of_pb = if b != 0 {
+        let p_b = b as f64 / a_plus_b as f64;
+        p_b * p_b.log2()
+    } else {
+        0.0
+    };
+
+    -(p_a_times_log_of_pa + p_b_times_log_of_pb)
 }
