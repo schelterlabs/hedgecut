@@ -127,7 +127,10 @@ fn generate_random_split_candidates<D: Dataset>(
     let split_candidates: Vec<SplitCandidate> = attribute_indexes.iter()
         .take(3)
         .map(|attribute_index| {
-            let random_cut_off = rng.gen_range(0_u8, 20_u8);
+
+            let (min_value, max_value) = dataset.attribute_range(*attribute_index);
+
+            let random_cut_off = rng.gen_range(min_value, max_value + 1);
 
             SplitCandidate::new(*attribute_index, random_cut_off)
         })

@@ -3,7 +3,7 @@ import pandas as pd
 import duckdb
 
 from sklearn.preprocessing import KBinsDiscretizer
-
+from sklearn.model_selection import train_test_split
 
 def binarize(row, attribute, positive_value):
     if row[attribute] == positive_value:
@@ -13,8 +13,10 @@ def binarize(row, attribute, positive_value):
 
 
 def discretize(data, attribute):
-	discretizer = KBinsDiscretizer(n_bins=16, encode='ordinal', strategy='quantile')
-	return discretizer.fit_transform(data[attribute].values.reshape(-1, 1))
+    discretizer = KBinsDiscretizer(n_bins=16, encode='ordinal', strategy='quantile')
+    discretizer = discretizer.fit(data[attribute].values.reshape(-1, 1))
+    transformed_values = discretizer.transform(data[attribute].values.reshape(-1, 1))
+    return transformed_values, discretizer
 
 conn = duckdb.connect()
 
@@ -22,29 +24,40 @@ conn.execute("CREATE TABLE titanic_raw AS SELECT * FROM read_csv_auto('../titani
 
 raw_data = conn.execute("SELECT * FROM titanic_raw").fetchdf()
 
+train_samples, test_samples = train_test_split(raw_data, test_size=0.2)
 
-ages = discretize(raw_data, 'Age')
-fares = discretize(raw_data, 'Fare')
-siblings = discretize(raw_data, 'Siblings/Spouses Aboard')
-children = discretize(raw_data, 'Parents/Children Aboard')
-genders = raw_data.apply(lambda row: binarize(row, 'Sex', 'male'), axis=1)
-pclasses = raw_data['Pclass'].values
-labels = raw_data['Survived'].values
+ages, age_discretizer = discretize(train_samples, 'Age')
+fares, fares_discretizer = discretize(train_samples, 'Fare')
+siblings = train_samples['Siblings/Spouses Aboard'].values
+children = train_samples['Parents/Children Aboard'].values
+genders = train_samples.apply(lambda row: binarize(row, 'Sex', 'male'), axis=1)
+pclasses = train_samples['Pclass'].values
+labels = train_samples['Survived'].values
 
 record_id = 0
 
-with open('../titanic-attributes.csv', 'w') as attributes_file:
+with open('../titanic-train.csv', 'w') as file:
 
-	attributes_file.write(f'record_id\tattribute\tvalue\n')
+    file.write(f'record_id\tage\tfare\tsiblings\tchildren\tgender\tpclass\tlabel\n')
 
-	for (age, fare, gender, pclass, label) in zip(ages, fares, genders, pclasses, labels):
+    for (age, fare, sibling, thechildren, gender, pclass, label) in zip(ages, fares, siblings, children, genders, pclasses, labels):
 
-		attributes_file.write(f'{record_id}\tage\t{int(age[0])}\n');
-		attributes_file.write(f'{record_id}\tfare\t{int(fare[0])}\n');
-		attributes_file.write(f'{record_id}\tsiblings\t{int(siblings[0])}\n')
-		attributes_file.write(f'{record_id}\tchildren\t{int(children[0])}\n')
-		attributes_file.write(f'{record_id}\tgender\t{int(gender)}\n')
-		attributes_file.write(f'{record_id}\tpclass\t{int(pclass)}\n')
-		attributes_file.write(f'{record_id}\tlabel\t{label}\n')
+        file.write(f'{record_id}\t{int(age[0])}\t{int(fare[0])}\t{int(sibling)}\t{int(thechildren)}\t{int(gender)}\t{int(pclass)}\t{label}\n')
+        record_id += 1
 
-		record_id += 1
+test_ages = age_discretizer.transform(test_samples['Age'].values.reshape(-1, 1))
+test_fares = fares_discretizer.transform(test_samples['Fare'].values.reshape(-1, 1))
+test_siblings = test_samples['Siblings/Spouses Aboard'].values
+test_children = test_samples['Parents/Children Aboard'].values
+test_genders = test_samples.apply(lambda row: binarize(row, 'Sex', 'male'), axis=1)
+test_pclasses = test_samples['Pclass'].values
+test_labels = test_samples['Survived'].values
+
+with open('../titanic-test.csv', 'w') as file:
+
+    file.write(f'record_id\tage\tfare\tsiblings\tchildren\tgender\tpclass\tlabel\n')
+
+    for (age, fare, sibling, thechildren, gender, pclass, label) in zip(test_ages, test_fares, test_siblings, test_children, test_genders, test_pclasses, test_labels):
+
+        file.write(f'{record_id}\t{int(age[0])}\t{int(fare[0])}\t{int(sibling)}\t{int(thechildren)}\t{int(gender)}\t{int(pclass)}\t{label}\n')
+        record_id += 1

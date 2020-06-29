@@ -6,32 +6,43 @@ mod split_stats;
 mod dataset;
 mod tree;
 
-
-
 use tree::ExtremelyRandomizedTrees;
-use dataset::{TitanicDataset, TitanicSample};
+use dataset::TitanicDataset;
 
 
 
 
 fn main() {
 
-    let dataset = TitanicDataset::from_csv();
+    let train_data = TitanicDataset::dataset_from_csv();
+    let test_data = TitanicDataset::samples_from_csv();
 
-    let trees = ExtremelyRandomizedTrees::fit(&dataset, 100);
+    let trees = ExtremelyRandomizedTrees::fit(&train_data, 100);
 
-    let sample = TitanicSample {
-        age: 5,
-        fare: 1,
-        siblings: 1,
-        children: 0,
-        gender: 1,
-        pclass: 3,
-        label: false
-    };
+    let mut t_p = 0;
+    let mut f_p = 0;
+    let mut t_n = 0;
+    let mut f_n = 0;
 
-    let predicted_label = trees.predict(&sample);
+    for sample in test_data.iter() {
+        let predicted_label = trees.predict(sample);
 
-    println!("Predicted label: {}, True label: {}", predicted_label, sample.label);
+        if sample.label {
+            if predicted_label {
+                t_p += 1;
+            } else {
+                f_n += 1;
+            }
+        } else {
+            if predicted_label {
+                f_p += 1;
+            } else {
+                t_n += 1;
+            }
+        }
+    }
 
+    let accuracy = (t_p + t_n) as f64 / test_data.len() as f64;
+    println!("Accuracy {}", accuracy);
+    println!("[{}\t{}\n{}\t{}]", t_p, f_p, f_n, t_n);
 }
