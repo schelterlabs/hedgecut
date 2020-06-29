@@ -2,22 +2,28 @@ extern crate csv;
 extern crate rand;
 extern crate rayon;
 
-mod split_stats;
 mod dataset;
 mod tree;
+mod split_stats;
+
+use std::time::Instant;
 
 use tree::ExtremelyRandomizedTrees;
 use dataset::TitanicDataset;
-
-
-
 
 fn main() {
 
     let train_data = TitanicDataset::dataset_from_csv();
     let test_data = TitanicDataset::samples_from_csv();
 
-    let trees = ExtremelyRandomizedTrees::fit(&train_data, 100);
+    let num_trees = 100;
+
+    let training_start = Instant::now();
+
+    let trees = ExtremelyRandomizedTrees::fit(&train_data, num_trees);
+
+    let training_duration = training_start.elapsed();
+    println!("Fitted {} trees in {} ms", num_trees, training_duration.as_millis());
 
     let mut t_p = 0;
     let mut f_p = 0;

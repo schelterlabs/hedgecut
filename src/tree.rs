@@ -5,7 +5,7 @@ use rayon::prelude::*;
 
 use std::marker::Sync;
 
-use crate::split_stats::SplitStats;
+use crate::split_stats::{SplitStats, is_robust};
 use crate::dataset::{Dataset, Sample};
 
 struct SplitCandidate {
@@ -74,12 +74,22 @@ impl Tree {
 
     fn fit<D: Dataset>(dataset: &D) -> Tree {
 
+        // TODO replace with a faster hashmap
         let mut tree_elements: HashMap<u32, TreeElement> = HashMap::new();
         let record_ids_to_split: Vec<u32> = (0 .. dataset.num_records()).collect();
 
+        //TODO try Cow for the constant attribute indexes
         determine_split(&mut tree_elements, record_ids_to_split, dataset, 1, 0, Vec::new());
 
         Tree { elements: tree_elements }
+    }
+
+    fn leaf(num_samples: u32, num_plus: u32) -> TreeElement {
+        TreeElement::Leaf { num_samples, num_plus }
+    }
+
+    fn node(attribute_index: u8, cut_off: u8) -> TreeElement {
+        TreeElement::Node { attribute_index, cut_off }
     }
 
     fn predict<S: Sample>(&self, sample: &S) -> bool {
@@ -125,7 +135,7 @@ fn generate_random_split_candidates<D: Dataset>(
 
     // TODO can we allocate once and reuse the vec somehow?
     let split_candidates: Vec<SplitCandidate> = attribute_indexes.iter()
-        .take(3)
+        .take(3)// TODO should depend on number of attributes in dataset
         .map(|attribute_index| {
 
             let (min_value, max_value) = dataset.attribute_range(*attribute_index);
@@ -147,6 +157,7 @@ fn determine_split<D: Dataset>(
     num_tries: u8,
     constant_attribute_indexes: Vec<u8>
 ) {
+    let max_num_tries = 25; // TODO make configurable
 
     let split_candidates = generate_random_split_candidates(dataset, &constant_attribute_indexes);
 
@@ -160,11 +171,11 @@ fn determine_split<D: Dataset>(
         .collect();
 
     let maybe_best_split_stats = split_stats.iter().enumerate()
-        .filter(|(_, stats)| stats.score.is_some())
-        .max_by(|(_, stats1), (_, stats2)| stats1.score.unwrap().cmp(&stats2.score.unwrap()));
+        .filter(|(_, stats)| stats.score != 0)
+        .max_by(|(_, stats1), (_, stats2)| stats1.score.cmp(&stats2.score));
 
     if maybe_best_split_stats.is_none() {
-        if num_tries < 25 {
+        if num_tries < max_num_tries { // TODO make configurable
             determine_split(
                 tree_elements,
                 record_ids_to_split,
@@ -176,16 +187,12 @@ fn determine_split<D: Dataset>(
 
             return;
         } else {
-            //TODO Handle this case by creating a leaf
-            //panic!("Did not find a working split for {} records", record_ids_to_split.len());
+
             let some_stats = split_stats.first().unwrap();
             let num_plus = some_stats.num_plus_left + some_stats.num_plus_right;
             let num_samples = some_stats.num_minus_left + some_stats.num_minus_right + num_plus;
 
-            let leaf = TreeElement::Leaf {
-                num_samples,
-                num_plus
-            };
+            let leaf = Tree::leaf(num_samples, num_plus);
 
             tree_elements.insert(current_id, leaf);
 
@@ -197,24 +204,70 @@ fn determine_split<D: Dataset>(
 
     let best_split_candidate = split_candidates.get(index_of_best_stats).unwrap();
 
-    //println!("Best split {:?}", best_split_stats);
+    let mut at_least_one_non_robust = false;
+
+    // TODO we might need to check all and proceed
+    for (index, stats) in split_stats.iter().enumerate() {
+        if index != index_of_best_stats {
+            if !is_robust(best_split_stats, stats, 1) {
+                at_least_one_non_robust = true;
+                break;
+            }
+        }
+    }
+
+    if at_least_one_non_robust && num_tries < max_num_tries {
+        //println!("Non-robust split found, retrying...");
+        determine_split(
+            tree_elements,
+            record_ids_to_split,
+            dataset,
+            current_id,
+            num_tries + 1,
+            constant_attribute_indexes.clone() // TODO try to get rid of the clone here
+        );
+    } else {
+
+        if at_least_one_non_robust {
+            println!("Encountered non-robust split on {} records.", record_ids_to_split.len());
+        }
+
+        split_and_continue(
+            tree_elements,
+            record_ids_to_split,
+            dataset,
+            current_id,
+            constant_attribute_indexes,
+            best_split_candidate,
+            best_split_stats
+        );
+    }
+}
+
+fn split_and_continue<D: Dataset>(
+    tree_elements: &mut HashMap<u32, TreeElement>,
+    record_ids_to_split: Vec<u32>,
+    dataset: &D,
+    current_id: u32,
+    constant_attribute_indexes: Vec<u8>,
+    best_split_candidate: &SplitCandidate,
+    best_split_stats: &SplitStats
+) {
 
     let (record_ids_left, constant_value_on_the_left,
         record_ids_right, constant_value_on_the_right) = split(
         record_ids_to_split,
         dataset,
-        &best_split_candidate,
-        &best_split_stats);
+        best_split_candidate,
+        best_split_stats);
 
-    let min_leaf_size: usize = 3;
+    let min_leaf_size: usize = 3; // TODO make configurable
+
     // TODO move into conditional block
     let label_constant_on_the_left =
         best_split_stats.num_minus_left == 0 || best_split_stats.num_plus_left == 0;
 
-    let node = TreeElement::Node {
-        attribute_index: best_split_candidate.attribute_index,
-        cut_off: best_split_candidate.cut_off
-    };
+    let node = Tree::node(best_split_candidate.attribute_index, best_split_candidate.cut_off);
 
     tree_elements.insert(current_id, node);
 
@@ -223,10 +276,10 @@ fn determine_split<D: Dataset>(
     if record_ids_left.len() <= min_leaf_size || label_constant_on_the_left {
         //println!("Building leaf for {} records", record_ids_left.len());
 
-        let leaf = TreeElement::Leaf {
-            num_samples: best_split_stats.num_plus_left + best_split_stats.num_minus_left,
-            num_plus: best_split_stats.num_plus_left
-        };
+        let leaf = Tree::leaf(
+            best_split_stats.num_plus_left + best_split_stats.num_minus_left,
+            best_split_stats.num_plus_left
+        );
 
         tree_elements.insert(left_child_id, leaf);
 
@@ -258,10 +311,10 @@ fn determine_split<D: Dataset>(
     if record_ids_right.len() <= min_leaf_size || label_constant_on_the_right {
         //println!("Building leaf for {} records", record_ids_right.len());
 
-        let leaf = TreeElement::Leaf {
-            num_samples: best_split_stats.num_plus_left + best_split_stats.num_minus_left,
-            num_plus: best_split_stats.num_plus_left
-        };
+        let leaf = Tree::leaf(
+            best_split_stats.num_plus_right + best_split_stats.num_minus_right,
+            best_split_stats.num_plus_right
+        );
 
         tree_elements.insert(right_child_id, leaf);
 

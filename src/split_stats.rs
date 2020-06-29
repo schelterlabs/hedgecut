@@ -1,11 +1,11 @@
 
-#[derive(Eq,PartialEq,Debug)]
+#[derive(Eq,PartialEq,Debug, Clone)]
 pub struct SplitStats {
     pub num_plus_left: u32,
     pub num_minus_left: u32,
     pub num_plus_right: u32,
     pub num_minus_right: u32,
-    pub score: Option<u64>,
+    pub score: u64,
 }
 
 impl SplitStats {
@@ -16,7 +16,7 @@ impl SplitStats {
             num_minus_left: 0,
             num_plus_right: 0,
             num_minus_right: 0,
-            score: None
+            score: 0
         }
     }
 
@@ -46,18 +46,147 @@ impl SplitStats {
     }
 }
 
+pub fn is_robust(
+    current_champion_stats: &SplitStats,
+    current_runnerup_stats: &SplitStats,
+    threshold: usize
+) -> bool {
+
+    let mut weakened_stats = Some((current_champion_stats.clone(), current_runnerup_stats.clone()));
+    let mut num_removals = 0;
+
+    let mut is_robust = true;
+
+    loop {
+
+        // We could not find a way to decrease the split score difference with
+        // the given number of removal operations
+        if weakened_stats.is_none() || num_removals > threshold {
+            break;
+        }
+
+        let the_stats = weakened_stats.unwrap();
+
+        // Runner up beats champion, split not robust
+        if (the_stats.0.score as f64 - the_stats.1.score as f64) < 0.0 {
+            is_robust = false;
+            break;
+        }
+
+        if num_removals > threshold {
+            break;
+        }
+
+        weakened_stats = weaken_split(&the_stats.0, &the_stats.1);
+
+        num_removals += 1;
+    };
+
+    is_robust
+}
+
+fn weaken_split(
+    current_champion_split_stats: &SplitStats,
+    current_runnerup_split_stats: &SplitStats,
+) -> Option<(SplitStats, SplitStats)> {
+    let truefalse = [true, false];
+
+    let mut weakest_pair: Option<(SplitStats, SplitStats)> = None;
+    let mut score_diff_to_beat =
+        current_champion_split_stats.score as f64 - current_runnerup_split_stats.score as f64;
+
+    for is_plus in truefalse.iter() {
+        for passes_first in truefalse.iter() {
+            for passes_second in truefalse.iter() {
+                let mut champion_stats = current_champion_split_stats.clone();
+                let mut runnerup_stats = current_runnerup_split_stats.clone();
+
+                if *is_plus && *passes_first && *passes_second {
+                    if champion_stats.num_plus_left != 0 && runnerup_stats.num_plus_left != 0 {
+                        champion_stats.num_plus_left -= 1;
+                        runnerup_stats.num_plus_left -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if *is_plus && !*passes_first && *passes_second {
+                    if champion_stats.num_plus_right != 0 && runnerup_stats.num_plus_left != 0 {
+                        champion_stats.num_plus_right -= 1;
+                        runnerup_stats.num_plus_left -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if *is_plus && *passes_first && !*passes_second {
+                    if champion_stats.num_plus_left != 0 && runnerup_stats.num_plus_right != 0 {
+                        champion_stats.num_plus_left -= 1;
+                        runnerup_stats.num_plus_right -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if *is_plus && !*passes_first && !*passes_second {
+                    if champion_stats.num_plus_right != 0 && runnerup_stats.num_plus_right != 0 {
+                        champion_stats.num_plus_right -= 1;
+                        runnerup_stats.num_plus_right -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if !*is_plus && *passes_first && *passes_second {
+                    if champion_stats.num_minus_left != 0 && runnerup_stats.num_minus_left != 0 {
+                        champion_stats.num_minus_left -= 1;
+                        runnerup_stats.num_minus_left -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if !*is_plus && !*passes_first && *passes_second {
+                    if champion_stats.num_minus_right != 0 && runnerup_stats.num_minus_left != 0 {
+                        champion_stats.num_minus_right -= 1;
+                        runnerup_stats.num_minus_left -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if !*is_plus && *passes_first && !*passes_second {
+                    if champion_stats.num_minus_left != 0 && runnerup_stats.num_minus_right != 0 {
+                        champion_stats.num_minus_left -= 1;
+                        runnerup_stats.num_minus_right -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if !*is_plus && !*passes_first && !*passes_second {
+                    if champion_stats.num_minus_right != 0 && runnerup_stats.num_minus_right != 0 {
+                        champion_stats.num_minus_right -= 1;
+                        runnerup_stats.num_minus_right -= 1;
+                    } else {
+                        continue;
+                    }
+                }
+
+                champion_stats.update_score();
+                runnerup_stats.update_score();
+
+                let new_score_diff = champion_stats.score as f64 - runnerup_stats.score as f64;
+
+                if new_score_diff < score_diff_to_beat {
+                    score_diff_to_beat = new_score_diff;
+                    weakest_pair = Some((champion_stats, runnerup_stats));
+                }
+            }
+        }
+    }
+
+    weakest_pair
+}
+
 fn normalized_information_gain(
     num_plus_left: u32,
     num_minus_left: u32,
     num_plus_right: u32,
-    num_minus_right: u32)
-    -> Option<u64> {
+    num_minus_right: u32
+) -> u64 {
 
     let num_left = num_plus_left + num_minus_left;
     let num_right = num_plus_right + num_minus_right;
 
     if num_left == 0 || num_right == 0 {
-        return None
+        return 0;
     }
 
     let num_plus = num_plus_left + num_plus_right;
@@ -95,7 +224,7 @@ fn normalized_information_gain(
 
     //println!("H_C(S) {}, H_T(s) {}, H_C|T(S) {}, Score {}", hcs, hts, hcts, score);
 
-    Some((score * 1_000_000_000_000_f64) as u64)
+    (score * 1_000_000_000_000_f64) as u64
 }
 
 #[allow(non_snake_case)]
