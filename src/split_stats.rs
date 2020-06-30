@@ -37,7 +37,7 @@ impl SplitStats {
     }
 
     pub fn update_score(&mut self) {
-        self.score = normalized_information_gain(
+        self.score = gini(//normalized_information_gain(
             self.num_plus_left,
             self.num_minus_left,
             self.num_plus_right,
@@ -56,6 +56,8 @@ pub fn is_robust(
     let mut num_removals = 0;
 
     let mut is_robust = true;
+
+    //println!("Starting robustness check");
 
     loop {
 
@@ -92,6 +94,9 @@ fn weaken_split(
     let truefalse = [true, false];
 
     let mut weakest_pair: Option<(SplitStats, SplitStats)> = None;
+
+    //let mut best_step: Option<(bool, bool, bool)> = None;
+
     let mut score_diff_to_beat =
         current_champion_split_stats.score as f64 - current_runnerup_split_stats.score as f64;
 
@@ -167,13 +172,64 @@ fn weaken_split(
                 if new_score_diff < score_diff_to_beat {
                     score_diff_to_beat = new_score_diff;
                     weakest_pair = Some((champion_stats, runnerup_stats));
+                    //best_step = Some((*is_plus, *passes_first, *passes_second));
                 }
             }
         }
     }
 
+    //println!("\t{:?}", best_step);
+
     weakest_pair
 }
+
+fn gini(
+    num_plus_left: u32,
+    num_minus_left: u32,
+    num_plus_right: u32,
+    num_minus_right: u32
+) -> u64 {
+
+    let num_samples_left = num_plus_left + num_minus_left;
+    let num_samples_right = num_plus_right + num_minus_right;
+
+    if num_samples_left == 0 || num_samples_right == 0 {
+        return 0;
+    }
+
+    let num_samples = num_samples_left + num_samples_right;
+
+    let num_plus = num_plus_left + num_plus_right;
+    let num_minus = num_minus_left + num_minus_right;
+
+    let p_plus = num_plus as f64 / num_samples as f64;
+    let p_minus = num_minus as f64 / num_samples as f64;
+
+    let gini_node = 1.0 - (p_plus * p_plus) - (p_minus * p_minus);
+
+    let p_plus_left = num_plus_left as f64 / num_samples_left as f64;
+    let p_minus_left = num_minus_left as f64 / num_samples_left as f64;
+
+    let gini_left = 1.0 - (p_plus_left * p_plus_left) - (p_minus_left * p_minus_left);
+
+    let p_plus_right = num_plus_right as f64 / num_samples_right as f64;
+    let p_minus_right = num_minus_right as f64 / num_samples_right as f64;
+
+    let gini_right = 1.0 - (p_plus_right * p_plus_right) - (p_minus_right * p_minus_right);
+
+
+    let score = (num_samples as f64 / 24000.0) * (gini_node -
+        (num_samples_left as f64 / num_samples as f64) * gini_left -
+        (num_samples_right as f64 / num_samples as f64) * gini_right);
+
+    if score.is_nan() {
+        println!("[{},{},{},{}]", num_plus_left, num_minus_left, num_plus_right, num_minus_right);
+        println!("{}, {}, {}, {}", score, gini_left, gini_right, gini_node);
+    }
+
+    (score * 1_000_000_000_000_f64) as u64
+}
+
 
 fn normalized_information_gain(
     num_plus_left: u32,

@@ -27,14 +27,15 @@ pub struct ExtremelyRandomizedTrees {
 
 impl ExtremelyRandomizedTrees {
 
-    pub fn fit<D>(
+    pub fn fit<D, S>(
         dataset: &D,
+        samples: Vec<S>,
         seed: u64,
         num_trees: usize,
         min_leaf_size: usize,
         max_tries_per_split: usize,
     ) -> ExtremelyRandomizedTrees
-        where D: Dataset + Sync
+        where D: Dataset + Sync, S: Sample + Sync
     {
 
         let num_attributes_to_try_per_split =
@@ -56,6 +57,7 @@ impl ExtremelyRandomizedTrees {
             .into_par_iter()
             .map(|tree_index| Tree::fit(
                 dataset,
+                samples.clone(),
                 seed,
                 tree_index as u64,
                 min_leaf_size,
@@ -106,8 +108,9 @@ struct Tree {
 
 impl Tree {
 
-    fn fit<D: Dataset>(
+    fn fit<D: Dataset, S: Sample>(
         dataset: &D,
+        samples: Vec<S>,
         seed: u64,
         tree_index: u64,
         min_leaf_size: usize,
@@ -127,10 +130,8 @@ impl Tree {
             max_tries_per_split,
         };
 
-        let record_ids_to_split: Vec<u32> = (0 .. dataset.num_records()).collect();
-
         //TODO try Cow for the constant attribute indexes
-        tree.determine_split(record_ids_to_split, dataset, 1, 0, Vec::new());
+        tree.determine_split(samples, dataset, 1, 0, Vec::new());
 
         return tree;
     }
@@ -199,9 +200,9 @@ impl Tree {
         split_candidates
     }
 
-    fn determine_split<D: Dataset>(
+    fn determine_split<D: Dataset, S: Sample>(
         &mut self,
-        record_ids_to_split: Vec<u32>,
+        samples: Vec<S>,
         dataset: &D,
         current_id: u32,
         num_tries: usize,
@@ -214,9 +215,7 @@ impl Tree {
         //TODO as it might be still in caches
 
         let split_stats: Vec<SplitStats> = split_candidates.iter()
-            .map(|candidate| {
-                compute_split_stats(&record_ids_to_split, &candidate, dataset, &dataset.labels())
-            })
+            .map(|candidate| compute_split_stats(&samples, &candidate))
             .collect();
 
         let maybe_best_split_stats = split_stats.iter().enumerate()
@@ -226,7 +225,7 @@ impl Tree {
         if maybe_best_split_stats.is_none() {
             if num_tries < self.max_tries_per_split {
                 self.determine_split(
-                    record_ids_to_split,
+                    samples,
                     dataset,
                     current_id,
                     num_tries + 1,
@@ -267,7 +266,7 @@ impl Tree {
         if at_least_one_non_robust && num_tries < self.max_tries_per_split {
             //println!("Non-robust split found, retrying...");
             self.determine_split(
-                record_ids_to_split,
+                samples,
                 dataset,
                 current_id,
                 num_tries + 1,
@@ -276,11 +275,11 @@ impl Tree {
         } else {
 
             if at_least_one_non_robust {
-                println!("Encountered non-robust split on {} records.", record_ids_to_split.len());
+                println!("Encountered non-robust split on {} records.", samples.len());
             }
 
             self.split_and_continue(
-                record_ids_to_split,
+                samples,
                 dataset,
                 current_id,
                 constant_attribute_indexes,
@@ -290,9 +289,9 @@ impl Tree {
         }
     }
 
-    fn split_and_continue<D: Dataset>(
+    fn split_and_continue<D: Dataset, S: Sample>(
         &mut self,
-        record_ids_to_split: Vec<u32>,
+        samples: Vec<S>,
         dataset: &D,
         current_id: u32,
         constant_attribute_indexes: Vec<u8>,
@@ -300,11 +299,8 @@ impl Tree {
         best_split_stats: &SplitStats
     ) {
 
-        let (record_ids_left, constant_value_on_the_left,
-            record_ids_right, constant_value_on_the_right) = split(
-            record_ids_to_split,
-            dataset,
-            best_split_candidate);
+        let (samples_left, constant_on_the_left, samples_right, constant_on_the_right) =
+            split(samples, best_split_candidate);
 
         let node = Tree::node(best_split_candidate.attribute_index, best_split_candidate.cut_off);
 
@@ -315,7 +311,7 @@ impl Tree {
         let label_constant_on_the_left =
             best_split_stats.num_minus_left == 0 || best_split_stats.num_plus_left == 0;
 
-        if record_ids_left.len() <= self.min_leaf_size || label_constant_on_the_left {
+        if samples_left.len() <= self.min_leaf_size || label_constant_on_the_left {
             //println!("Building leaf for {} records", record_ids_left.len());
 
             let leaf = Tree::leaf(
@@ -329,13 +325,13 @@ impl Tree {
 
             // TODO get rid of the clone here
             let mut constant_attribute_indexes_left = constant_attribute_indexes.clone();
-            if constant_value_on_the_left {
+            if constant_on_the_left {
                 //println!("Constant attribute found in {} records", record_ids_left.len());
                 constant_attribute_indexes_left.push(best_split_candidate.attribute_index)
             }
 
             self.determine_split(
-                record_ids_left,
+                samples_left,
                 dataset,
                 left_child_id,
                 0,
@@ -348,7 +344,7 @@ impl Tree {
         let label_constant_on_the_right =
             best_split_stats.num_minus_right == 0 || best_split_stats.num_plus_right == 0;
 
-        if record_ids_right.len() <= self.min_leaf_size || label_constant_on_the_right {
+        if samples_right.len() <= self.min_leaf_size || label_constant_on_the_right {
             //println!("Building leaf for {} records", record_ids_right.len());
 
             let leaf = Tree::leaf(
@@ -362,13 +358,13 @@ impl Tree {
 
             // TODO get rid of the clone here
             let mut constant_attribute_indexes_right = constant_attribute_indexes.clone();
-            if constant_value_on_the_right {
+            if constant_on_the_right {
                 //println!("Constant attribute found in {} records", record_ids_right.len());
                 constant_attribute_indexes_right.push(best_split_candidate.attribute_index)
             }
 
             self.determine_split(
-                record_ids_right,
+                samples_right,
                 dataset,
                 right_child_id,
                 0,
@@ -379,23 +375,18 @@ impl Tree {
 }
 
 
-fn compute_split_stats<D: Dataset>(
-    record_ids_to_split: &Vec<u32>,
+fn compute_split_stats<S: Sample>(
+    samples: &Vec<S>,
     split_candidate: &SplitCandidate,
-    dataset: &D,
-    labels: &Vec<bool>
 ) -> SplitStats {
     let mut split_stats = SplitStats::new();
 
-    let attribute_to_split_on = dataset.attribute(split_candidate.attribute_index);
-    let cut_off = split_candidate.cut_off;
-
-    for record_id in record_ids_to_split {
+    for sample in samples {
         // TODO Maybe remove boundary checks here later
-        let plus = *labels.get(*record_id as usize).unwrap();
+        let plus = sample.true_label();
 
-        let attribute_value = *attribute_to_split_on.get(*record_id as usize).unwrap();
-        let is_left =  attribute_value < cut_off;
+        let is_left =
+            sample.is_smaller_than(split_candidate.attribute_index, split_candidate.cut_off);
 
         split_stats.update(plus, is_left);
     }
@@ -406,52 +397,56 @@ fn compute_split_stats<D: Dataset>(
 }
 
 // TODO needs to be tested more thoroughly
-fn split<D: Dataset>(
-    mut record_ids: Vec<u32>,
-    dataset: &D,
+fn split<S>(
+    mut samples: Vec<S>,
     split_candidate: &SplitCandidate
-) -> (Vec<u32>, bool, Vec<u32>, bool) {
+) -> (Vec<S>, bool, Vec<S>, bool)
+    where S: Sample, S: Clone
+{
 
-    let attribute_to_split_on = dataset.attribute(split_candidate.attribute_index);
+    //let attribute_to_split_on = dataset.attribute(split_candidate.attribute_index);
     let cut_off = split_candidate.cut_off;
 
     let mut cursor = 0;
-    let mut cursor_end = record_ids.len();
+    let mut cursor_end = samples.len();
 
-    let mut constant_value_on_the_left = true;
+    let mut constant_on_the_left = true;
     let mut first_value_on_the_left: Option<u8> = None;
-    let mut constant_value_on_the_right = true;
+    let mut constant_on_the_right = true;
     let mut first_value_on_the_right: Option<u8> = None;
 
     loop {
         // TODO Maybe remove boundary checks here later
-        let record_id = record_ids.get(cursor).unwrap();
-        let attribute_value = *attribute_to_split_on.get(*record_id as usize).unwrap();
+        //let record_id = record_ids.get(cursor).unwrap();
+        //let attribute_value = *attribute_to_split_on.get(*record_id as usize).unwrap();
+        let sample = samples.get(cursor).unwrap();
+        let attribute_value: u8 = sample.attribute_value(split_candidate.attribute_index);
+
         if attribute_value < cut_off {
 
-            if constant_value_on_the_left {
+            if constant_on_the_left {
                 if first_value_on_the_left.is_none() {
                     first_value_on_the_left = Some(attribute_value);
                 } else if attribute_value != first_value_on_the_left.unwrap() {
-                    constant_value_on_the_left = false;
+                    constant_on_the_left = false;
                 }
             }
 
             cursor += 1;
         } else {
 
-            if constant_value_on_the_right {
+            if constant_on_the_right {
                 if first_value_on_the_right.is_none() {
                     first_value_on_the_right = Some(attribute_value);
                 } else if attribute_value != first_value_on_the_right.unwrap() {
-                    constant_value_on_the_right = false;
+                    constant_on_the_right = false;
                 }
             }
 
             cursor_end -= 1;
             //println!("Swapping {} and {} with record {}({}), cursor_end is now {}",
             // cursor, cursor_end, record_id, value, cursor_end);
-            record_ids.swap(cursor, cursor_end);
+            samples.swap(cursor, cursor_end);
         }
 
         if cursor == cursor_end - 1 {
@@ -459,12 +454,9 @@ fn split<D: Dataset>(
         }
     }
 
-    let (record_ids_left, record_ids_right) = record_ids.split_at_mut(cursor);
+    let (samples_left, samples_right) = samples.split_at_mut(cursor);
 
-    (record_ids_left.to_vec(),
-     constant_value_on_the_left,
-     record_ids_right.to_vec(),
-     constant_value_on_the_right)
+    (samples_left.to_vec(), constant_on_the_left, samples_right.to_vec(), constant_on_the_right)
 }
 
 fn as_bytes(seed: u64, tree_index: u64) -> [u8; 16] {

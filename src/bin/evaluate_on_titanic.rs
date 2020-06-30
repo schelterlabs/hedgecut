@@ -7,8 +7,10 @@ use hedgecut::dataset::TitanicDataset;
 
 fn main() {
 
-    let train_data = TitanicDataset::dataset_from_csv();
+    let samples = TitanicDataset::samples_from_csv2();
     let test_data = TitanicDataset::samples_from_csv();
+
+    let dataset = TitanicDataset { num_records: samples.len() as u32 };
 
     let seed: u64 = 42;
     let num_trees = 100;
@@ -18,7 +20,8 @@ fn main() {
     let training_start = Instant::now();
 
     let trees = ExtremelyRandomizedTrees::fit(
-        &train_data,
+        &dataset,
+        samples,
         seed,
         num_trees,
         min_leaf_size,

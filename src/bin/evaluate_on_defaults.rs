@@ -7,10 +7,12 @@ use hedgecut::dataset::DefaultsDataset;
 
 fn main() {
 
-    let train_data = DefaultsDataset::dataset_from_csv();
+    let samples = DefaultsDataset::samples_from_csv2();
     let test_data = DefaultsDataset::samples_from_csv();
 
-    let seed: u64 = 42;
+    let dataset = DefaultsDataset { num_records: samples.len() as u32 };
+
+    let seed: u64 = 6789;
     let num_trees = 100;
     let min_leaf_size = 2;
     let max_tries_per_split = 25;
@@ -18,7 +20,8 @@ fn main() {
     let training_start = Instant::now();
 
     let trees = ExtremelyRandomizedTrees::fit(
-        &train_data,
+        &dataset,
+        samples,
         seed,
         num_trees,
         min_leaf_size,
@@ -53,5 +56,5 @@ fn main() {
 
     let accuracy = (t_p + t_n) as f64 / test_data.len() as f64;
     println!("Accuracy {}", accuracy);
-    println!("[{}\t{}\n{}\t{}]", t_p, f_p, f_n, t_n);
+    println!("[{}\t{}\n{}\t{}]", t_p, f_n, f_p, t_n);
 }
