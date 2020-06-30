@@ -19,3 +19,10 @@ path = "src/lib.rs"
 csv = "1.1"
 rand = "0.6.5"
 rayon = "1.1"
+hashbrown = "0.8"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+opt-level = 3

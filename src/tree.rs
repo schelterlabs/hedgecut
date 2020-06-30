@@ -1,14 +1,14 @@
-use std::collections::HashMap;
+//use std::collections::HashMap;
 use rand::seq::SliceRandom;
 use rand::Rng;
 use rayon::prelude::*;
 
 use std::marker::Sync;
+use hashbrown::HashMap;
 
 
 use crate::split_stats::{SplitStats, is_robust};
 use crate::dataset::{Dataset, Sample};
-
 
 struct SplitCandidate {
     pub attribute_index: u8,
