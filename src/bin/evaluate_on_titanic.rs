@@ -10,12 +10,20 @@ fn main() {
     let train_data = TitanicDataset::dataset_from_csv();
     let test_data = TitanicDataset::samples_from_csv();
 
+    let seed: u64 = 42;
     let num_trees = 100;
+    let min_leaf_size = 2;
     let max_tries_per_split = 25;
 
     let training_start = Instant::now();
 
-    let trees = ExtremelyRandomizedTrees::fit(&train_data, num_trees, max_tries_per_split);
+    let trees = ExtremelyRandomizedTrees::fit(
+        &train_data,
+        seed,
+        num_trees,
+        min_leaf_size,
+        max_tries_per_split
+    );
 
     let training_duration = training_start.elapsed();
     println!("Fitted {} trees in {} ms", num_trees, training_duration.as_millis());

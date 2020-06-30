@@ -12,6 +12,10 @@ path = "src/bin/evaluate_on_defaults.rs"
 name = "evaluate_on_titanic"
 path = "src/bin/evaluate_on_titanic.rs"
 
+[[bin]]
+name = "play"
+path = "src/bin/play.rs"
+
 [lib]
 path = "src/lib.rs"
 

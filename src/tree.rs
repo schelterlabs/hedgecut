@@ -1,6 +1,6 @@
-//use std::collections::HashMap;
+#![allow(deprecated)] // TODO use rand_xorshift crate to remove this...
+use rand::{Rng,SeedableRng,XorShiftRng};
 use rand::seq::SliceRandom;
-use rand::Rng;
 use rayon::prelude::*;
 
 use std::marker::Sync;
@@ -26,9 +26,12 @@ pub struct ExtremelyRandomizedTrees {
 }
 
 impl ExtremelyRandomizedTrees {
+
     pub fn fit<D>(
         dataset: &D,
+        seed: u64,
         num_trees: usize,
+        min_leaf_size: usize,
         max_tries_per_split: usize,
     ) -> ExtremelyRandomizedTrees
         where D: Dataset + Sync
@@ -51,8 +54,11 @@ impl ExtremelyRandomizedTrees {
 
         let trees: Vec<Tree> = (0..num_trees)
             .into_par_iter()
-            .map(|_| Tree::fit(
+            .map(|tree_index| Tree::fit(
                 dataset,
+                seed,
+                tree_index as u64,
+                min_leaf_size,
                 num_attributes_to_try_per_split,
                 target_robustness,
                 max_tries_per_split
@@ -88,7 +94,9 @@ enum TreeElement {
 }
 
 struct Tree {
+    rng: XorShiftRng,
     tree_elements: HashMap<u32, TreeElement>,
+    min_leaf_size: usize,
     num_attributes_to_try_per_split: usize,
     target_robustness: usize,
     max_tries_per_split: usize,
@@ -100,14 +108,20 @@ impl Tree {
 
     fn fit<D: Dataset>(
         dataset: &D,
+        seed: u64,
+        tree_index: u64,
+        min_leaf_size: usize,
         num_attributes_to_try_per_split: usize,
         target_robustness: usize,
         max_tries_per_split: usize
     ) -> Tree {
 
-        // TODO replace with a faster hashmap
+        let rng = XorShiftRng::from_seed(as_bytes(seed, tree_index));
+
         let mut tree = Tree {
+            rng,
             tree_elements: HashMap::new(),
+            min_leaf_size,
             num_attributes_to_try_per_split,
             target_robustness,
             max_tries_per_split,
@@ -155,19 +169,19 @@ impl Tree {
     }
 
     fn generate_random_split_candidates<D: Dataset>(
-        &self,
+        &mut self,
         dataset: &D,
         constant_attribute_indexes: &Vec<u8>
     ) -> Vec<SplitCandidate> {
-
-        let mut rng = rand::thread_rng();
 
         let mut attribute_indexes: Vec<u8> = (0..dataset.num_attributes())
             // TODO This searches linearly, but does it matter here?
             .filter(|attribute_index| !constant_attribute_indexes.contains(attribute_index))
             .collect();
 
-        attribute_indexes.shuffle(&mut rng);
+        attribute_indexes.shuffle(&mut self.rng);
+
+
 
         // TODO can we allocate once and reuse the vec somehow?
         let split_candidates: Vec<SplitCandidate> = attribute_indexes.iter()
@@ -176,7 +190,7 @@ impl Tree {
 
                 let (min_value, max_value) = dataset.attribute_range(*attribute_index);
 
-                let random_cut_off = rng.gen_range(min_value, max_value + 1);
+                let random_cut_off = self.rng.gen_range(min_value, max_value + 1);
 
                 SplitCandidate::new(*attribute_index, random_cut_off)
             })
@@ -290,14 +304,7 @@ impl Tree {
             record_ids_right, constant_value_on_the_right) = split(
             record_ids_to_split,
             dataset,
-            best_split_candidate,
-            best_split_stats);
-
-        let min_leaf_size: usize = 3; // TODO make configurable
-
-        // TODO move into conditional block
-        let label_constant_on_the_left =
-            best_split_stats.num_minus_left == 0 || best_split_stats.num_plus_left == 0;
+            best_split_candidate);
 
         let node = Tree::node(best_split_candidate.attribute_index, best_split_candidate.cut_off);
 
@@ -305,7 +312,10 @@ impl Tree {
 
         let left_child_id = current_id * 2;
 
-        if record_ids_left.len() <= min_leaf_size || label_constant_on_the_left {
+        let label_constant_on_the_left =
+            best_split_stats.num_minus_left == 0 || best_split_stats.num_plus_left == 0;
+
+        if record_ids_left.len() <= self.min_leaf_size || label_constant_on_the_left {
             //println!("Building leaf for {} records", record_ids_left.len());
 
             let leaf = Tree::leaf(
@@ -333,13 +343,12 @@ impl Tree {
             );
         }
 
-        // TODO move into conditional block
+        let right_child_id = (current_id * 2) + 1;
+
         let label_constant_on_the_right =
             best_split_stats.num_minus_right == 0 || best_split_stats.num_plus_right == 0;
 
-        let right_child_id = (current_id * 2) + 1;
-
-        if record_ids_right.len() <= min_leaf_size || label_constant_on_the_right {
+        if record_ids_right.len() <= self.min_leaf_size || label_constant_on_the_right {
             //println!("Building leaf for {} records", record_ids_right.len());
 
             let leaf = Tree::leaf(
@@ -396,58 +405,90 @@ fn compute_split_stats<D: Dataset>(
     split_stats
 }
 
+// TODO needs to be tested more thoroughly
 fn split<D: Dataset>(
-    record_ids_to_split: Vec<u32>,
+    mut record_ids: Vec<u32>,
     dataset: &D,
-    split_candidate: &SplitCandidate,
-    split_stats: &SplitStats
-) -> (Vec<u32>, bool, Vec<u32>, bool) { // TODO replace with a struct for readability
+    split_candidate: &SplitCandidate
+) -> (Vec<u32>, bool, Vec<u32>, bool) {
 
     let attribute_to_split_on = dataset.attribute(split_candidate.attribute_index);
     let cut_off = split_candidate.cut_off;
 
-    // TODO We copy here for safety, should reuse the allocated vector later
-    let num_left = split_stats.num_plus_left + split_stats.num_minus_left;
-    let mut record_ids_left = Vec::with_capacity(num_left as usize);
-
-    let num_right = split_stats.num_plus_right + split_stats.num_minus_right;
-    let mut record_ids_right = Vec::with_capacity(num_right as usize);
+    let mut cursor = 0;
+    let mut cursor_end = record_ids.len();
 
     let mut constant_value_on_the_left = true;
     let mut first_value_on_the_left: Option<u8> = None;
     let mut constant_value_on_the_right = true;
     let mut first_value_on_the_right: Option<u8> = None;
 
-    for record_id in record_ids_to_split {
+    loop {
+        // TODO Maybe remove boundary checks here later
+        let record_id = record_ids.get(cursor).unwrap();
+        let attribute_value = *attribute_to_split_on.get(*record_id as usize).unwrap();
+        if attribute_value < cut_off {
 
-        let attribute_value = *attribute_to_split_on.get(record_id as usize).unwrap();
-        let is_left =  attribute_value < cut_off;
-
-        if is_left {
-            if first_value_on_the_left.is_none() {
-                first_value_on_the_left = Some(attribute_value);
-            } else {
-                if constant_value_on_the_left &&
-                    attribute_value != first_value_on_the_left.unwrap() {
+            if constant_value_on_the_left {
+                if first_value_on_the_left.is_none() {
+                    first_value_on_the_left = Some(attribute_value);
+                } else if attribute_value != first_value_on_the_left.unwrap() {
                     constant_value_on_the_left = false;
                 }
             }
 
-            record_ids_left.push(record_id);
+            cursor += 1;
         } else {
 
-            if first_value_on_the_right.is_none() {
-                first_value_on_the_right = Some(attribute_value);
-            } else {
-                if constant_value_on_the_right &&
-                    attribute_value != first_value_on_the_right.unwrap() {
+            if constant_value_on_the_right {
+                if first_value_on_the_right.is_none() {
+                    first_value_on_the_right = Some(attribute_value);
+                } else if attribute_value != first_value_on_the_right.unwrap() {
                     constant_value_on_the_right = false;
                 }
             }
 
-            record_ids_right.push(record_id);
+            cursor_end -= 1;
+            //println!("Swapping {} and {} with record {}({}), cursor_end is now {}",
+            // cursor, cursor_end, record_id, value, cursor_end);
+            record_ids.swap(cursor, cursor_end);
+        }
+
+        if cursor == cursor_end - 1 {
+            break;
         }
     }
 
-    (record_ids_left, constant_value_on_the_left, record_ids_right, constant_value_on_the_right)
+    let (record_ids_left, record_ids_right) = record_ids.split_at_mut(cursor);
+
+    (record_ids_left.to_vec(),
+     constant_value_on_the_left,
+     record_ids_right.to_vec(),
+     constant_value_on_the_right)
+}
+
+fn as_bytes(seed: u64, tree_index: u64) -> [u8; 16] {
+
+    use std::mem::transmute;
+    let seed_bytes: [u8; 8] = unsafe { transmute(seed.to_be()) };
+    let tree_index_bytes: [u8; 8] = unsafe { transmute(tree_index.to_be()) };
+
+    [
+        *seed_bytes.get(0).unwrap(),
+        *seed_bytes.get(1).unwrap(),
+        *seed_bytes.get(2).unwrap(),
+        *seed_bytes.get(3).unwrap(),
+        *seed_bytes.get(4).unwrap(),
+        *seed_bytes.get(5).unwrap(),
+        *seed_bytes.get(6).unwrap(),
+        *seed_bytes.get(7).unwrap(),
+        *tree_index_bytes.get(0).unwrap(),
+        *tree_index_bytes.get(1).unwrap(),
+        *tree_index_bytes.get(2).unwrap(),
+        *tree_index_bytes.get(3).unwrap(),
+        *tree_index_bytes.get(4).unwrap(),
+        *tree_index_bytes.get(5).unwrap(),
+        *tree_index_bytes.get(6).unwrap(),
+        *tree_index_bytes.get(7).unwrap(),
+    ]
 }
