@@ -5,8 +5,10 @@ use rayon::prelude::*;
 
 use std::marker::Sync;
 
+
 use crate::split_stats::{SplitStats, is_robust};
 use crate::dataset::{Dataset, Sample};
+
 
 struct SplitCandidate {
     pub attribute_index: u8,
@@ -26,14 +28,35 @@ pub struct ExtremelyRandomizedTrees {
 impl ExtremelyRandomizedTrees {
     pub fn fit<D>(
         dataset: &D,
-        num_trees: usize
+        num_trees: usize,
+        max_tries_per_split: usize,
     ) -> ExtremelyRandomizedTrees
         where D: Dataset + Sync
     {
 
+        let num_attributes_to_try_per_split =
+            (dataset.num_attributes() as f64).sqrt().round() as usize;
+
+        let target_robustness = ((dataset.num_records() as f64) / 1000.0).round() as usize;
+
+        println!(
+            "Fitting {} trees on {} records with num_attributes_to_try_per_split={}, \
+             target_robustness={}, max_tries_per_split={}",
+            num_trees,
+            dataset.num_records(),
+            num_attributes_to_try_per_split,
+            target_robustness,
+            max_tries_per_split
+        );
+
         let trees: Vec<Tree> = (0..num_trees)
             .into_par_iter()
-            .map(|_| Tree::fit(dataset))
+            .map(|_| Tree::fit(
+                dataset,
+                num_attributes_to_try_per_split,
+                target_robustness,
+                max_tries_per_split
+            ))
             .collect();
 
         ExtremelyRandomizedTrees { trees }
@@ -65,23 +88,37 @@ enum TreeElement {
 }
 
 struct Tree {
-    elements: HashMap<u32, TreeElement>
+    tree_elements: HashMap<u32, TreeElement>,
+    num_attributes_to_try_per_split: usize,
+    target_robustness: usize,
+    max_tries_per_split: usize,
 }
 
 
 
 impl Tree {
 
-    fn fit<D: Dataset>(dataset: &D) -> Tree {
+    fn fit<D: Dataset>(
+        dataset: &D,
+        num_attributes_to_try_per_split: usize,
+        target_robustness: usize,
+        max_tries_per_split: usize
+    ) -> Tree {
 
         // TODO replace with a faster hashmap
-        let mut tree_elements: HashMap<u32, TreeElement> = HashMap::new();
+        let mut tree = Tree {
+            tree_elements: HashMap::new(),
+            num_attributes_to_try_per_split,
+            target_robustness,
+            max_tries_per_split,
+        };
+
         let record_ids_to_split: Vec<u32> = (0 .. dataset.num_records()).collect();
 
         //TODO try Cow for the constant attribute indexes
-        determine_split(&mut tree_elements, record_ids_to_split, dataset, 1, 0, Vec::new());
+        tree.determine_split(record_ids_to_split, dataset, 1, 0, Vec::new());
 
-        Tree { elements: tree_elements }
+        return tree;
     }
 
     fn leaf(num_samples: u32, num_plus: u32) -> TreeElement {
@@ -98,7 +135,7 @@ impl Tree {
 
         loop {
 
-            let element = self.elements.get(&element_id).unwrap();
+            let element = self.tree_elements.get(&element_id).unwrap();
 
             match element {
 
@@ -117,226 +154,221 @@ impl Tree {
         }
     }
 
-}
+    fn generate_random_split_candidates<D: Dataset>(
+        &self,
+        dataset: &D,
+        constant_attribute_indexes: &Vec<u8>
+    ) -> Vec<SplitCandidate> {
 
-fn generate_random_split_candidates<D: Dataset>(
-    dataset: &D,
-    constant_attribute_indexes: &Vec<u8>
-) -> Vec<SplitCandidate> {
+        let mut rng = rand::thread_rng();
 
-    let mut rng = rand::thread_rng();
+        let mut attribute_indexes: Vec<u8> = (0..dataset.num_attributes())
+            // TODO This searches linearly, but does it matter here?
+            .filter(|attribute_index| !constant_attribute_indexes.contains(attribute_index))
+            .collect();
 
-    let mut attribute_indexes: Vec<u8> = (0..dataset.num_attributes())
-        // TODO This searches linearly, but does it matter here?
-        .filter(|attribute_index| !constant_attribute_indexes.contains(attribute_index))
-        .collect();
+        attribute_indexes.shuffle(&mut rng);
 
-    attribute_indexes.shuffle(&mut rng);
+        // TODO can we allocate once and reuse the vec somehow?
+        let split_candidates: Vec<SplitCandidate> = attribute_indexes.iter()
+            .take(self.num_attributes_to_try_per_split)
+            .map(|attribute_index| {
 
-    // TODO can we allocate once and reuse the vec somehow?
-    let split_candidates: Vec<SplitCandidate> = attribute_indexes.iter()
-        .take(5)// TODO should depend on number of attributes in dataset
-        .map(|attribute_index| {
+                let (min_value, max_value) = dataset.attribute_range(*attribute_index);
 
-            let (min_value, max_value) = dataset.attribute_range(*attribute_index);
+                let random_cut_off = rng.gen_range(min_value, max_value + 1);
 
-            let random_cut_off = rng.gen_range(min_value, max_value + 1);
+                SplitCandidate::new(*attribute_index, random_cut_off)
+            })
+            .collect();
 
-            SplitCandidate::new(*attribute_index, random_cut_off)
-        })
-        .collect();
+        split_candidates
+    }
 
-    split_candidates
-}
+    fn determine_split<D: Dataset>(
+        &mut self,
+        record_ids_to_split: Vec<u32>,
+        dataset: &D,
+        current_id: u32,
+        num_tries: usize,
+        constant_attribute_indexes: Vec<u8>
+    ) {
+        let split_candidates =
+            self.generate_random_split_candidates(dataset, &constant_attribute_indexes);
 
-fn determine_split<D: Dataset>(
-    tree_elements: &mut HashMap<u32, TreeElement>,
-    record_ids_to_split: Vec<u32>,
-    dataset: &D,
-    current_id: u32,
-    num_tries: u8,
-    constant_attribute_indexes: Vec<u8>
-) {
-    let max_num_tries = 25; // TODO make configurable
+        //TODO we could try to check the split attribute first (if we have it again)
+        //TODO as it might be still in caches
 
-    let split_candidates = generate_random_split_candidates(dataset, &constant_attribute_indexes);
+        let split_stats: Vec<SplitStats> = split_candidates.iter()
+            .map(|candidate| {
+                compute_split_stats(&record_ids_to_split, &candidate, dataset, &dataset.labels())
+            })
+            .collect();
 
-    //TODO we could try to check the split attribute first (if we have it again)
-    //TODO as it might be still in caches
+        let maybe_best_split_stats = split_stats.iter().enumerate()
+            .filter(|(_, stats)| stats.score != 0)
+            .max_by(|(_, stats1), (_, stats2)| stats1.score.cmp(&stats2.score));
 
-    let split_stats: Vec<SplitStats> = split_candidates.iter()
-        .map(|candidate| {
-            compute_split_stats(&record_ids_to_split, &candidate, dataset, &dataset.labels())
-        })
-        .collect();
+        if maybe_best_split_stats.is_none() {
+            if num_tries < self.max_tries_per_split {
+                self.determine_split(
+                    record_ids_to_split,
+                    dataset,
+                    current_id,
+                    num_tries + 1,
+                    constant_attribute_indexes.clone() // TODO try to get rid of the clone here
+                );
 
-    let maybe_best_split_stats = split_stats.iter().enumerate()
-        .filter(|(_, stats)| stats.score != 0)
-        .max_by(|(_, stats1), (_, stats2)| stats1.score.cmp(&stats2.score));
+                return;
+            } else {
 
-    if maybe_best_split_stats.is_none() {
-        if num_tries < max_num_tries { // TODO make configurable
-            determine_split(
-                tree_elements,
+                let some_stats = split_stats.first().unwrap();
+                let num_plus = some_stats.num_plus_left + some_stats.num_plus_right;
+                let num_samples = some_stats.num_minus_left + some_stats.num_minus_right + num_plus;
+
+                let leaf = Tree::leaf(num_samples, num_plus);
+
+                self.tree_elements.insert(current_id, leaf);
+
+                return;
+            }
+        }
+
+        let (index_of_best_stats, best_split_stats) = maybe_best_split_stats.unwrap();
+
+        let best_split_candidate = split_candidates.get(index_of_best_stats).unwrap();
+
+        let mut at_least_one_non_robust = false;
+
+        // TODO we might need to check all and proceed
+        for (index, stats) in split_stats.iter().enumerate() {
+            if index != index_of_best_stats {
+                if !is_robust(best_split_stats, stats, self.target_robustness) {
+                    at_least_one_non_robust = true;
+                    break;
+                }
+            }
+        }
+
+        if at_least_one_non_robust && num_tries < self.max_tries_per_split {
+            //println!("Non-robust split found, retrying...");
+            self.determine_split(
                 record_ids_to_split,
                 dataset,
                 current_id,
                 num_tries + 1,
                 constant_attribute_indexes.clone() // TODO try to get rid of the clone here
             );
-
-            return;
         } else {
 
-            let some_stats = split_stats.first().unwrap();
-            let num_plus = some_stats.num_plus_left + some_stats.num_plus_right;
-            let num_samples = some_stats.num_minus_left + some_stats.num_minus_right + num_plus;
-
-            let leaf = Tree::leaf(num_samples, num_plus);
-
-            tree_elements.insert(current_id, leaf);
-
-            return;
-        }
-    }
-
-    let (index_of_best_stats, best_split_stats) = maybe_best_split_stats.unwrap();
-
-    let best_split_candidate = split_candidates.get(index_of_best_stats).unwrap();
-
-    let mut at_least_one_non_robust = false;
-
-    // TODO we might need to check all and proceed
-    for (index, stats) in split_stats.iter().enumerate() {
-        if index != index_of_best_stats {
-            if !is_robust(best_split_stats, stats, 25) { // TODO make configurable
-                at_least_one_non_robust = true;
-                break;
+            if at_least_one_non_robust {
+                println!("Encountered non-robust split on {} records.", record_ids_to_split.len());
             }
+
+            self.split_and_continue(
+                record_ids_to_split,
+                dataset,
+                current_id,
+                constant_attribute_indexes,
+                best_split_candidate,
+                best_split_stats
+            );
         }
     }
 
-    if at_least_one_non_robust && num_tries < max_num_tries {
-        //println!("Non-robust split found, retrying...");
-        determine_split(
-            tree_elements,
+    fn split_and_continue<D: Dataset>(
+        &mut self,
+        record_ids_to_split: Vec<u32>,
+        dataset: &D,
+        current_id: u32,
+        constant_attribute_indexes: Vec<u8>,
+        best_split_candidate: &SplitCandidate,
+        best_split_stats: &SplitStats
+    ) {
+
+        let (record_ids_left, constant_value_on_the_left,
+            record_ids_right, constant_value_on_the_right) = split(
             record_ids_to_split,
             dataset,
-            current_id,
-            num_tries + 1,
-            constant_attribute_indexes.clone() // TODO try to get rid of the clone here
-        );
-    } else {
-
-        if at_least_one_non_robust {
-            println!("Encountered non-robust split on {} records.", record_ids_to_split.len());
-        }
-
-        split_and_continue(
-            tree_elements,
-            record_ids_to_split,
-            dataset,
-            current_id,
-            constant_attribute_indexes,
             best_split_candidate,
-            best_split_stats
-        );
+            best_split_stats);
+
+        let min_leaf_size: usize = 3; // TODO make configurable
+
+        // TODO move into conditional block
+        let label_constant_on_the_left =
+            best_split_stats.num_minus_left == 0 || best_split_stats.num_plus_left == 0;
+
+        let node = Tree::node(best_split_candidate.attribute_index, best_split_candidate.cut_off);
+
+        self.tree_elements.insert(current_id, node);
+
+        let left_child_id = current_id * 2;
+
+        if record_ids_left.len() <= min_leaf_size || label_constant_on_the_left {
+            //println!("Building leaf for {} records", record_ids_left.len());
+
+            let leaf = Tree::leaf(
+                best_split_stats.num_plus_left + best_split_stats.num_minus_left,
+                best_split_stats.num_plus_left
+            );
+
+            self.tree_elements.insert(left_child_id, leaf);
+
+        } else {
+
+            // TODO get rid of the clone here
+            let mut constant_attribute_indexes_left = constant_attribute_indexes.clone();
+            if constant_value_on_the_left {
+                //println!("Constant attribute found in {} records", record_ids_left.len());
+                constant_attribute_indexes_left.push(best_split_candidate.attribute_index)
+            }
+
+            self.determine_split(
+                record_ids_left,
+                dataset,
+                left_child_id,
+                0,
+                constant_attribute_indexes_left
+            );
+        }
+
+        // TODO move into conditional block
+        let label_constant_on_the_right =
+            best_split_stats.num_minus_right == 0 || best_split_stats.num_plus_right == 0;
+
+        let right_child_id = (current_id * 2) + 1;
+
+        if record_ids_right.len() <= min_leaf_size || label_constant_on_the_right {
+            //println!("Building leaf for {} records", record_ids_right.len());
+
+            let leaf = Tree::leaf(
+                best_split_stats.num_plus_right + best_split_stats.num_minus_right,
+                best_split_stats.num_plus_right
+            );
+
+            self.tree_elements.insert(right_child_id, leaf);
+
+        } else {
+
+            // TODO get rid of the clone here
+            let mut constant_attribute_indexes_right = constant_attribute_indexes.clone();
+            if constant_value_on_the_right {
+                //println!("Constant attribute found in {} records", record_ids_right.len());
+                constant_attribute_indexes_right.push(best_split_candidate.attribute_index)
+            }
+
+            self.determine_split(
+                record_ids_right,
+                dataset,
+                right_child_id,
+                0,
+                constant_attribute_indexes_right
+            );
+        }
     }
 }
 
-fn split_and_continue<D: Dataset>(
-    tree_elements: &mut HashMap<u32, TreeElement>,
-    record_ids_to_split: Vec<u32>,
-    dataset: &D,
-    current_id: u32,
-    constant_attribute_indexes: Vec<u8>,
-    best_split_candidate: &SplitCandidate,
-    best_split_stats: &SplitStats
-) {
-
-    let (record_ids_left, constant_value_on_the_left,
-        record_ids_right, constant_value_on_the_right) = split(
-        record_ids_to_split,
-        dataset,
-        best_split_candidate,
-        best_split_stats);
-
-    let min_leaf_size: usize = 3; // TODO make configurable
-
-    // TODO move into conditional block
-    let label_constant_on_the_left =
-        best_split_stats.num_minus_left == 0 || best_split_stats.num_plus_left == 0;
-
-    let node = Tree::node(best_split_candidate.attribute_index, best_split_candidate.cut_off);
-
-    tree_elements.insert(current_id, node);
-
-    let left_child_id = current_id * 2;
-
-    if record_ids_left.len() <= min_leaf_size || label_constant_on_the_left {
-        //println!("Building leaf for {} records", record_ids_left.len());
-
-        let leaf = Tree::leaf(
-            best_split_stats.num_plus_left + best_split_stats.num_minus_left,
-            best_split_stats.num_plus_left
-        );
-
-        tree_elements.insert(left_child_id, leaf);
-
-    } else {
-
-        // TODO get rid of the clone here
-        let mut constant_attribute_indexes_left = constant_attribute_indexes.clone();
-        if constant_value_on_the_left {
-            //println!("Constant attribute found in {} records", record_ids_left.len());
-            constant_attribute_indexes_left.push(best_split_candidate.attribute_index)
-        }
-
-        determine_split(
-            tree_elements,
-            record_ids_left,
-            dataset,
-            left_child_id,
-            0,
-            constant_attribute_indexes_left
-        );
-    }
-
-    // TODO move into conditional block
-    let label_constant_on_the_right =
-        best_split_stats.num_minus_right == 0 || best_split_stats.num_plus_right == 0;
-
-    let right_child_id = (current_id * 2) + 1;
-
-    if record_ids_right.len() <= min_leaf_size || label_constant_on_the_right {
-        //println!("Building leaf for {} records", record_ids_right.len());
-
-        let leaf = Tree::leaf(
-            best_split_stats.num_plus_right + best_split_stats.num_minus_right,
-            best_split_stats.num_plus_right
-        );
-
-        tree_elements.insert(right_child_id, leaf);
-
-    } else {
-
-        // TODO get rid of the clone here
-        let mut constant_attribute_indexes_right = constant_attribute_indexes.clone();
-        if constant_value_on_the_right {
-            //println!("Constant attribute found in {} records", record_ids_right.len());
-            constant_attribute_indexes_right.push(best_split_candidate.attribute_index)
-        }
-
-        determine_split(
-            tree_elements,
-            record_ids_right,
-            dataset,
-            right_child_id,
-            0,
-            constant_attribute_indexes_right
-        );
-    }
-}
 
 fn compute_split_stats<D: Dataset>(
     record_ids_to_split: &Vec<u32>,

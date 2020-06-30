@@ -20,7 +20,7 @@ def discretize(data, attribute):
 
 conn = duckdb.connect()
 
-conn.execute("CREATE TABLE titanic_raw AS SELECT * FROM read_csv_auto('../titanic.csv');")
+conn.execute("CREATE TABLE titanic_raw AS SELECT * FROM read_csv_auto('../datasets/titanic.csv');")
 
 raw_data = conn.execute("SELECT * FROM titanic_raw").fetchdf()
 
@@ -36,7 +36,7 @@ labels = train_samples['Survived'].values
 
 record_id = 0
 
-with open('../titanic-train.csv', 'w') as file:
+with open('../datasets/titanic-train.csv', 'w') as file:
 
     file.write(f'record_id\tage\tfare\tsiblings\tchildren\tgender\tpclass\tlabel\n')
 
@@ -53,7 +53,7 @@ test_genders = test_samples.apply(lambda row: binarize(row, 'Sex', 'male'), axis
 test_pclasses = test_samples['Pclass'].values
 test_labels = test_samples['Survived'].values
 
-with open('../titanic-test.csv', 'w') as file:
+with open('../datasets/titanic-test.csv', 'w') as file:
 
     file.write(f'record_id\tage\tfare\tsiblings\tchildren\tgender\tpclass\tlabel\n')
 

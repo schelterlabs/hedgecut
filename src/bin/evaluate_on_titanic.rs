@@ -1,26 +1,21 @@
-extern crate csv;
-extern crate rand;
-extern crate rayon;
-
-mod dataset;
-mod tree;
-mod split_stats;
+extern crate hedgecut;
 
 use std::time::Instant;
 
-use tree::ExtremelyRandomizedTrees;
-use dataset::DefaultsDataset;
+use hedgecut::tree::ExtremelyRandomizedTrees;
+use hedgecut::dataset::TitanicDataset;
 
 fn main() {
 
-    let train_data = DefaultsDataset::dataset_from_csv();
-    let test_data = DefaultsDataset::samples_from_csv();
+    let train_data = TitanicDataset::dataset_from_csv();
+    let test_data = TitanicDataset::samples_from_csv();
 
     let num_trees = 100;
+    let max_tries_per_split = 25;
 
     let training_start = Instant::now();
 
-    let trees = ExtremelyRandomizedTrees::fit(&train_data, num_trees);
+    let trees = ExtremelyRandomizedTrees::fit(&train_data, num_trees, max_tries_per_split);
 
     let training_duration = training_start.elapsed();
     println!("Fitted {} trees in {} ms", num_trees, training_duration.as_millis());

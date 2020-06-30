@@ -71,7 +71,7 @@ impl TitanicDataset {
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(true)
             .delimiter(b'\t')
-            .from_path("titanic-train.csv")
+            .from_path("datasets/titanic-train.csv")
             .unwrap();
 
         for result in reader.records() {
@@ -115,7 +115,7 @@ impl TitanicDataset {
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(true)
             .delimiter(b'\t')
-            .from_path("titanic-test.csv")
+            .from_path("datasets/titanic-test.csv")
             .unwrap();
 
         for result in reader.records() {
@@ -235,7 +235,7 @@ impl DefaultsDataset {
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(true)
             .delimiter(b'\t')
-            .from_path("defaults-train.csv")
+            .from_path("datasets/defaults-train.csv")
             .unwrap();
 
         for result in reader.records() {
@@ -328,7 +328,7 @@ impl DefaultsDataset {
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(true)
             .delimiter(b'\t')
-            .from_path("defaults-train.csv")
+            .from_path("datasets/defaults-train.csv")
             .unwrap();
 
         for result in reader.records() {

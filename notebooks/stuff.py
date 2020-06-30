@@ -11,7 +11,7 @@ from etd import ExtremelyRandomizedTrees
 
 np.random.seed(42)
 
-samples = pd.read_csv('../titanic.csv')
+samples = pd.read_csv('../datasets/titanic.csv')
 samples['sex_binary'] = samples.apply(lambda row: binarize(row, 'Sex', 'male'), axis=1)
 
 
