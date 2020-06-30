@@ -135,7 +135,7 @@ fn generate_random_split_candidates<D: Dataset>(
 
     // TODO can we allocate once and reuse the vec somehow?
     let split_candidates: Vec<SplitCandidate> = attribute_indexes.iter()
-        .take(3)// TODO should depend on number of attributes in dataset
+        .take(5)// TODO should depend on number of attributes in dataset
         .map(|attribute_index| {
 
             let (min_value, max_value) = dataset.attribute_range(*attribute_index);
@@ -209,7 +209,7 @@ fn determine_split<D: Dataset>(
     // TODO we might need to check all and proceed
     for (index, stats) in split_stats.iter().enumerate() {
         if index != index_of_best_stats {
-            if !is_robust(best_split_stats, stats, 1) {
+            if !is_robust(best_split_stats, stats, 25) { // TODO make configurable
                 at_least_one_non_robust = true;
                 break;
             }

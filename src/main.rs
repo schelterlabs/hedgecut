@@ -9,12 +9,12 @@ mod split_stats;
 use std::time::Instant;
 
 use tree::ExtremelyRandomizedTrees;
-use dataset::TitanicDataset;
+use dataset::DefaultsDataset;
 
 fn main() {
 
-    let train_data = TitanicDataset::dataset_from_csv();
-    let test_data = TitanicDataset::samples_from_csv();
+    let train_data = DefaultsDataset::dataset_from_csv();
+    let test_data = DefaultsDataset::samples_from_csv();
 
     let num_trees = 100;
 
