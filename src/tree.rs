@@ -57,7 +57,7 @@ impl ExtremelyRandomizedTrees {
             .into_par_iter()
             .map(|tree_index| Tree::fit(
                 dataset,
-                samples.clone(),
+                samples.clone().as_mut_slice(),
                 seed,
                 tree_index as u64,
                 min_leaf_size,
@@ -110,7 +110,7 @@ impl Tree {
 
     fn fit<D: Dataset, S: Sample>(
         dataset: &D,
-        samples: Vec<S>,
+        samples: &mut [S],
         seed: u64,
         tree_index: u64,
         min_leaf_size: usize,
@@ -209,7 +209,7 @@ impl Tree {
     fn determine_split<D: Dataset, S: Sample>(
         &mut self,
         impurity_before: f64,
-        samples: Vec<S>,
+        samples: &mut [S],
         dataset: &D,
         current_id: u32,
         num_tries: usize,
@@ -298,7 +298,7 @@ impl Tree {
 
     fn split_and_continue<D: Dataset, S: Sample>(
         &mut self,
-        samples: Vec<S>,
+        samples: &mut [S],
         dataset: &D,
         current_id: u32,
         constant_attribute_indexes: Vec<u8>,
@@ -386,7 +386,7 @@ impl Tree {
 
 fn compute_split_stats<S: Sample>(
     impurity_before: f64,
-    samples: &Vec<S>,
+    samples: &[S],
     split_candidate: &SplitCandidate,
 ) -> SplitStats {
     let mut split_stats = SplitStats::new();
@@ -407,14 +407,13 @@ fn compute_split_stats<S: Sample>(
 }
 
 // TODO needs to be tested more thoroughly
-fn split<S>(
-    mut samples: Vec<S>,
+fn split<'a, S>(
+    samples: &'a mut [S],
     split_candidate: &SplitCandidate
-) -> (Vec<S>, bool, Vec<S>, bool)
-    where S: Sample, S: Clone
+) -> (&'a mut [S], bool, &'a mut [S], bool)
+    where S: Sample
 {
 
-    //let attribute_to_split_on = dataset.attribute(split_candidate.attribute_index);
     let cut_off = split_candidate.cut_off;
 
     let mut cursor = 0;
@@ -427,8 +426,7 @@ fn split<S>(
 
     loop {
         // TODO Maybe remove boundary checks here later
-        //let record_id = record_ids.get(cursor).unwrap();
-        //let attribute_value = *attribute_to_split_on.get(*record_id as usize).unwrap();
+
         let sample = samples.get(cursor).unwrap();
         let attribute_value: u8 = sample.attribute_value(split_candidate.attribute_index);
 
@@ -466,7 +464,7 @@ fn split<S>(
 
     let (samples_left, samples_right) = samples.split_at_mut(cursor);
 
-    (samples_left.to_vec(), constant_on_the_left, samples_right.to_vec(), constant_on_the_right)
+    (samples_left, constant_on_the_left, samples_right, constant_on_the_right)
 }
 
 fn as_bytes(seed: u64, tree_index: u64) -> [u8; 16] {
