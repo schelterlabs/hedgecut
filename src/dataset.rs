@@ -38,7 +38,7 @@ impl Sample for TitanicSample {
             3 => &self.children,
             4 => &self.gender,
             5 => &self.pclass,
-            _ => panic!("Requested non exsting attribute!")
+            _ => panic!("Requested range for non-existing attribute {}!", attribute_index)
         };
 
         *attribute < cut_off
@@ -52,7 +52,7 @@ impl Sample for TitanicSample {
             3 => self.children,
             4 => self.gender,
             5 => self.pclass,
-            _ => panic!("Requested non exsting attribute!")
+            _ => panic!("Requested range for non-existing attribute {}!", attribute_index)
         }
     }
 
@@ -120,7 +120,7 @@ impl Dataset for TitanicDataset {
             3 => (0, 6),
             4 => (0, 1),
             5 => (1, 3),
-            _ => panic!("Requested range for non-existing attribute!")
+            _ => panic!("Requested range for non-existing attribute {}!", index)
         }
     }
 }
