@@ -7,12 +7,12 @@ use hedgecut::dataset::DefaultsDataset;
 
 fn main() {
 
-    let samples = DefaultsDataset::samples_from_csv2();
-    let test_data = DefaultsDataset::samples_from_csv();
+    let samples = DefaultsDataset::samples_from_csv("datasets/defaults-train.csv");
+    let test_data = DefaultsDataset::samples_from_csv("datasets/defaults-test.csv");
 
-    let dataset = DefaultsDataset { num_records: samples.len() as u32 };
+    let dataset = DefaultsDataset::from_samples(&samples);
 
-    let seed: u64 = 6789;
+    let seed: u64 = 666;
     let num_trees = 100;
     let min_leaf_size = 2;
     let max_tries_per_split = 25;

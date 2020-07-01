@@ -7,10 +7,10 @@ use hedgecut::dataset::TitanicDataset;
 
 fn main() {
 
-    let samples = TitanicDataset::samples_from_csv2();
-    let test_data = TitanicDataset::samples_from_csv();
+    let samples = TitanicDataset::samples_from_csv("datasets/titanic-train.csv");
+    let test_data = TitanicDataset::samples_from_csv("datasets/titanic-test.csv");
 
-    let dataset = TitanicDataset { num_records: samples.len() as u32 };
+    let dataset = TitanicDataset::from_samples(&samples);
 
     let seed: u64 = 42;
     let num_trees = 100;

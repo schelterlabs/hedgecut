@@ -7,7 +7,7 @@ use std::marker::Sync;
 use hashbrown::HashMap;
 
 
-use crate::split_stats::{SplitStats, is_robust};
+use crate::split_stats::SplitStats;//, is_robust};
 use crate::dataset::{Dataset, Sample};
 
 struct SplitCandidate {
@@ -130,8 +130,14 @@ impl Tree {
             max_tries_per_split,
         };
 
+        let p_plus = dataset.num_plus() as f64 / dataset.num_records() as f64;
+        let p_minus = (dataset.num_records() - dataset.num_plus()) as f64 /
+            dataset.num_records() as f64;
+
+        let gini_initial = 1.0 - (p_plus * p_plus) - (p_minus * p_minus);
+
         //TODO try Cow for the constant attribute indexes
-        tree.determine_split(samples, dataset, 1, 0, Vec::new());
+        tree.determine_split(gini_initial, samples, dataset, 1, 0, Vec::new());
 
         return tree;
     }
@@ -202,6 +208,7 @@ impl Tree {
 
     fn determine_split<D: Dataset, S: Sample>(
         &mut self,
+        impurity_before: f64,
         samples: Vec<S>,
         dataset: &D,
         current_id: u32,
@@ -211,11 +218,9 @@ impl Tree {
         let split_candidates =
             self.generate_random_split_candidates(dataset, &constant_attribute_indexes);
 
-        //TODO we could try to check the split attribute first (if we have it again)
-        //TODO as it might be still in caches
 
         let split_stats: Vec<SplitStats> = split_candidates.iter()
-            .map(|candidate| compute_split_stats(&samples, &candidate))
+            .map(|candidate| compute_split_stats(impurity_before, &samples, &candidate))
             .collect();
 
         let maybe_best_split_stats = split_stats.iter().enumerate()
@@ -225,6 +230,7 @@ impl Tree {
         if maybe_best_split_stats.is_none() {
             if num_tries < self.max_tries_per_split {
                 self.determine_split(
+                    impurity_before,
                     samples,
                     dataset,
                     current_id,
@@ -253,19 +259,20 @@ impl Tree {
 
         let mut at_least_one_non_robust = false;
 
-        // TODO we might need to check all and proceed
-        for (index, stats) in split_stats.iter().enumerate() {
-            if index != index_of_best_stats {
-                if !is_robust(best_split_stats, stats, self.target_robustness) {
-                    at_least_one_non_robust = true;
-                    break;
-                }
-            }
-        }
+        // // TODO we might need to check all and proceed
+        // for (index, stats) in split_stats.iter().enumerate() {
+        //     if index != index_of_best_stats {
+        //         if !is_robust(best_split_stats, stats, self.target_robustness) {
+        //             at_least_one_non_robust = true;
+        //             break;
+        //         }
+        //     }
+        // }
 
         if at_least_one_non_robust && num_tries < self.max_tries_per_split {
             //println!("Non-robust split found, retrying...");
             self.determine_split(
+                impurity_before,
                 samples,
                 dataset,
                 current_id,
@@ -331,6 +338,7 @@ impl Tree {
             }
 
             self.determine_split(
+                best_split_stats.impurity_left,
                 samples_left,
                 dataset,
                 left_child_id,
@@ -364,6 +372,7 @@ impl Tree {
             }
 
             self.determine_split(
+                best_split_stats.impurity_right,
                 samples_right,
                 dataset,
                 right_child_id,
@@ -376,13 +385,14 @@ impl Tree {
 
 
 fn compute_split_stats<S: Sample>(
+    impurity_before: f64,
     samples: &Vec<S>,
     split_candidate: &SplitCandidate,
 ) -> SplitStats {
     let mut split_stats = SplitStats::new();
 
     for sample in samples {
-        // TODO Maybe remove boundary checks here later
+
         let plus = sample.true_label();
 
         let is_left =
@@ -391,7 +401,7 @@ fn compute_split_stats<S: Sample>(
         split_stats.update(plus, is_left);
     }
 
-    split_stats.update_score();
+    split_stats.update_score(impurity_before);
 
     split_stats
 }

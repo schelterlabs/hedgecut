@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 pub trait Dataset {
     fn num_records(&self) -> u32;
+    fn num_plus(&self) -> u32;
     fn num_attributes(&self) -> u8;
     fn attribute_range(&self, index: u8) -> (u8, u8);
 }
@@ -14,6 +15,7 @@ pub trait Sample: Clone {
 
 pub struct TitanicDataset {
     pub num_records: u32,
+    pub num_plus: u32,
 }
 
 #[derive(Eq,PartialEq,Debug,Clone)]
@@ -62,37 +64,16 @@ impl Sample for TitanicSample {
 
 impl TitanicDataset {
 
-    pub fn samples_from_csv() -> Vec<TitanicSample> {
+    pub fn from_samples(samples: &Vec<TitanicSample>) -> DefaultsDataset {
+        let num_plus = samples.iter().filter(|sample| sample.true_label()).count();
 
-        let mut samples: Vec<TitanicSample> = Vec::new();
-
-
-        let mut reader = csv::ReaderBuilder::new()
-            .has_headers(true)
-            .delimiter(b'\t')
-            .from_path("datasets/titanic-test.csv")
-            .unwrap();
-
-        for result in reader.records() {
-            let record = result.unwrap();
-
-            let age = u8::from_str(record.get(1).unwrap()).unwrap();
-            let fare = u8::from_str(record.get(2).unwrap()).unwrap();
-            let siblings = u8::from_str(record.get(3).unwrap()).unwrap();
-            let children = u8::from_str(record.get(4).unwrap()).unwrap();
-            let gender = u8::from_str(record.get(5).unwrap()).unwrap();
-            let pclass = u8::from_str(record.get(6).unwrap()).unwrap();
-            let label = u8::from_str(record.get(4).unwrap()).unwrap() == 1;
-
-            let sample = TitanicSample { age, fare, siblings, children, gender, pclass, label };
-
-            samples.push(sample);
+        DefaultsDataset {
+            num_records: samples.len() as u32,
+            num_plus: num_plus as u32
         }
-
-        samples
     }
 
-    pub fn samples_from_csv2() -> Vec<TitanicSample> {
+    pub fn samples_from_csv(file: &str) -> Vec<TitanicSample> {
 
         let mut samples: Vec<TitanicSample> = Vec::new();
 
@@ -100,7 +81,7 @@ impl TitanicDataset {
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(true)
             .delimiter(b'\t')
-            .from_path("datasets/titanic-train.csv")
+            .from_path(file)
             .unwrap();
 
         for result in reader.records() {
@@ -127,6 +108,8 @@ impl Dataset for TitanicDataset {
 
     fn num_records(&self) -> u32 { self.num_records }
 
+    fn num_plus(&self) -> u32 { self.num_plus }
+
     fn num_attributes(&self) -> u8 { 6 }
 
     fn attribute_range(&self, index: u8) -> (u8, u8) {
@@ -144,89 +127,28 @@ impl Dataset for TitanicDataset {
 
 pub struct DefaultsDataset {
     pub num_records: u32,
+    pub num_plus: u32,
 }
 
 impl DefaultsDataset {
 
-    pub fn samples_from_csv2() -> Vec<DefaultsSample> {
+    pub fn from_samples(samples: &Vec<DefaultsSample>) -> DefaultsDataset {
+        let num_plus = samples.iter().filter(|sample| sample.true_label()).count();
 
-        let mut samples: Vec<DefaultsSample> = Vec::new();
-
-        let mut reader = csv::ReaderBuilder::new()
-            .has_headers(true)
-            .delimiter(b'\t')
-            .from_path("datasets/defaults-train.csv")
-            .unwrap();
-
-        for result in reader.records() {
-            let record = result.unwrap();
-
-            let limit = u8::from_str(record.get(1).unwrap()).unwrap();
-            let sex = u8::from_str(record.get(2).unwrap()).unwrap();
-            let education = u8::from_str(record.get(3).unwrap()).unwrap();
-            let marriage = u8::from_str(record.get(4).unwrap()).unwrap();
-            let age = u8::from_str(record.get(5).unwrap()).unwrap();
-            let pay0 = u8::from_str(record.get(6).unwrap()).unwrap();
-            let pay2 = u8::from_str(record.get(7).unwrap()).unwrap();
-            let pay3 = u8::from_str(record.get(8).unwrap()).unwrap();
-            let pay4 = u8::from_str(record.get(9).unwrap()).unwrap();
-            let pay5 = u8::from_str(record.get(10).unwrap()).unwrap();
-            let pay6 = u8::from_str(record.get(11).unwrap()).unwrap();
-            let bill_amt1 = u8::from_str(record.get(12).unwrap()).unwrap();
-            let bill_amt2 = u8::from_str(record.get(13).unwrap()).unwrap();
-            let bill_amt3 = u8::from_str(record.get(14).unwrap()).unwrap();
-            let bill_amt4 = u8::from_str(record.get(15).unwrap()).unwrap();
-            let bill_amt5 = u8::from_str(record.get(16).unwrap()).unwrap();
-            let bill_amt6 = u8::from_str(record.get(17).unwrap()).unwrap();
-            let pay_amt1 = u8::from_str(record.get(18).unwrap()).unwrap();
-            let pay_amt2 = u8::from_str(record.get(19).unwrap()).unwrap();
-            let pay_amt3 = u8::from_str(record.get(20).unwrap()).unwrap();
-            let pay_amt4 = u8::from_str(record.get(21).unwrap()).unwrap();
-            let pay_amt5 = u8::from_str(record.get(22).unwrap()).unwrap();
-            let pay_amt6 = u8::from_str(record.get(23).unwrap()).unwrap();
-            let label = u8::from_str(record.get(24).unwrap()).unwrap() == 1;
-
-            let sample = DefaultsSample {
-                limit,
-                sex,
-                education,
-                marriage,
-                age,
-                pay0,
-                pay2,
-                pay3,
-                pay4,
-                pay5,
-                pay6,
-                bill_amt1,
-                bill_amt2,
-                bill_amt3,
-                bill_amt4,
-                bill_amt5,
-                bill_amt6,
-                pay_amt1,
-                pay_amt2,
-                pay_amt3,
-                pay_amt4,
-                pay_amt5,
-                pay_amt6,
-                label
-            };
-
-            samples.push(sample);
+        DefaultsDataset {
+            num_records: samples.len() as u32,
+            num_plus: num_plus as u32
         }
-
-        samples
     }
 
-    pub fn samples_from_csv() -> Vec<DefaultsSample> {
+    pub fn samples_from_csv(file: &str) -> Vec<DefaultsSample> {
 
         let mut samples: Vec<DefaultsSample> = Vec::new();
 
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(true)
             .delimiter(b'\t')
-            .from_path("datasets/defaults-test.csv")
+            .from_path(file)
             .unwrap();
 
         for result in reader.records() {
@@ -296,6 +218,8 @@ impl Dataset for DefaultsDataset {
     fn num_records(&self) -> u32 {
         self.num_records
     }
+
+    fn num_plus(&self) -> u32 { self.num_plus }
 
     fn num_attributes(&self) -> u8 {
         23
