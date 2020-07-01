@@ -4,6 +4,7 @@ use rand::seq::SliceRandom;
 use rayon::prelude::*;
 
 use std::marker::Sync;
+use std::borrow::Cow;
 use hashbrown::HashMap;
 
 
@@ -136,8 +137,9 @@ impl Tree {
 
         let gini_initial = 1.0 - (p_plus * p_plus) - (p_minus * p_minus);
 
-        //TODO try Cow for the constant attribute indexes
-        tree.determine_split(gini_initial, samples, dataset, 1, 0, Vec::new());
+        let mut constant_attribute_indexes: Cow<[u8]> = Cow::from(Vec::new());
+
+        tree.determine_split(gini_initial, samples, dataset, 1, 0, &mut constant_attribute_indexes);
 
         return tree;
     }
@@ -178,7 +180,7 @@ impl Tree {
     fn generate_random_split_candidates<D: Dataset>(
         &mut self,
         dataset: &D,
-        constant_attribute_indexes: &Vec<u8>
+        constant_attribute_indexes: &Cow<[u8]>
     ) -> Vec<SplitCandidate> {
 
         let mut attribute_indexes: Vec<u8> = (0..dataset.num_attributes())
@@ -213,7 +215,7 @@ impl Tree {
         dataset: &D,
         current_id: u32,
         num_tries: usize,
-        constant_attribute_indexes: Vec<u8>
+        constant_attribute_indexes: &mut Cow<[u8]>
     ) {
         let split_candidates =
             self.generate_random_split_candidates(dataset, &constant_attribute_indexes);
@@ -235,7 +237,7 @@ impl Tree {
                     dataset,
                     current_id,
                     num_tries + 1,
-                    constant_attribute_indexes.clone() // TODO try to get rid of the clone here
+                    constant_attribute_indexes
                 );
 
                 return;
@@ -277,7 +279,7 @@ impl Tree {
                 dataset,
                 current_id,
                 num_tries + 1,
-                constant_attribute_indexes.clone() // TODO try to get rid of the clone here
+                constant_attribute_indexes
             );
         } else {
 
@@ -301,7 +303,7 @@ impl Tree {
         samples: &mut [S],
         dataset: &D,
         current_id: u32,
-        constant_attribute_indexes: Vec<u8>,
+        constant_attribute_indexes: &mut Cow<[u8]>,
         best_split_candidate: &SplitCandidate,
         best_split_stats: &SplitStats
     ) {
@@ -334,7 +336,7 @@ impl Tree {
             let mut constant_attribute_indexes_left = constant_attribute_indexes.clone();
             if constant_on_the_left {
                 //println!("Constant attribute found in {} records", record_ids_left.len());
-                constant_attribute_indexes_left.push(best_split_candidate.attribute_index)
+                constant_attribute_indexes_left.to_mut().push(best_split_candidate.attribute_index)
             }
 
             self.determine_split(
@@ -343,7 +345,7 @@ impl Tree {
                 dataset,
                 left_child_id,
                 0,
-                constant_attribute_indexes_left
+                &mut constant_attribute_indexes_left
             );
         }
 
@@ -368,7 +370,7 @@ impl Tree {
             let mut constant_attribute_indexes_right = constant_attribute_indexes.clone();
             if constant_on_the_right {
                 //println!("Constant attribute found in {} records", record_ids_right.len());
-                constant_attribute_indexes_right.push(best_split_candidate.attribute_index)
+                constant_attribute_indexes_right.to_mut().push(best_split_candidate.attribute_index)
             }
 
             self.determine_split(
@@ -377,7 +379,7 @@ impl Tree {
                 dataset,
                 right_child_id,
                 0,
-                constant_attribute_indexes_right
+                &mut constant_attribute_indexes_right
             );
         }
     }
@@ -407,12 +409,10 @@ fn compute_split_stats<S: Sample>(
 }
 
 // TODO needs to be tested more thoroughly
-fn split<'a, S>(
+fn split<'a, S: Sample>(
     samples: &'a mut [S],
     split_candidate: &SplitCandidate
-) -> (&'a mut [S], bool, &'a mut [S], bool)
-    where S: Sample
-{
+) -> (&'a mut [S], bool, &'a mut [S], bool) {
 
     let cut_off = split_candidate.cut_off;
 
