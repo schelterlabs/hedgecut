@@ -10,12 +10,13 @@ fn main() {
     let samples = DefaultsDataset::samples_from_csv("datasets/defaults-train.csv");
     let test_data = DefaultsDataset::samples_from_csv("datasets/defaults-test.csv");
 
+
     let dataset = DefaultsDataset::from_samples(&samples);
 
     let seed: u64 = 666;
     let num_trees = 100;
     let min_leaf_size = 2;
-    let max_tries_per_split = 25;
+    let max_tries_per_split = 50;
 
     let training_start = Instant::now();
 

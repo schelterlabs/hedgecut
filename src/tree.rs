@@ -94,11 +94,11 @@ enum TreeElement {
 }
 
 struct Tree {
+    index: usize,
     rng: XorShiftRng,
     tree_elements: HashMap<u32, TreeElement>,
     min_leaf_size: usize,
     num_attributes_to_try_per_split: usize,
-    target_robustness: usize,
     max_tries_per_split: usize,
 }
 
@@ -120,11 +120,11 @@ impl Tree {
         let rng = XorShiftRng::from_seed(as_bytes(seed, tree_index));
 
         let mut tree = Tree {
+            index: tree_index as usize,
             rng,
             tree_elements: HashMap::new(),
             min_leaf_size,
             num_attributes_to_try_per_split,
-            target_robustness,
             max_tries_per_split,
         };
 
@@ -135,7 +135,14 @@ impl Tree {
 
         let mut constant_attribute_indexes: Cow<[u8]> = Cow::from(Vec::new());
 
-        tree.determine_split(gini_initial, samples, dataset, 1, 0, &mut constant_attribute_indexes);
+        tree.determine_split(
+            gini_initial,
+            target_robustness,
+            samples,
+            dataset,
+            1,
+            0,
+            &mut constant_attribute_indexes);
 
         return tree;
     }
@@ -207,6 +214,7 @@ impl Tree {
     fn determine_split<D: Dataset, S: Sample>(
         &mut self,
         impurity_before: f64,
+        target_robustness: usize,
         samples: &mut [S],
         dataset: &D,
         current_id: u32,
@@ -214,10 +222,6 @@ impl Tree {
         constant_attribute_indexes: &mut Cow<[u8]>
     ) {
         let split_candidates = self.generate_split_candidates(dataset, &constant_attribute_indexes);
-
-        // let split_stats: Vec<SplitStats> = split_candidates.iter()
-        //     .map(|candidate| compute_split_stats(impurity_before, &samples, &candidate))
-        //     .collect();
 
         let split_stats = compute_split_stats(impurity_before, &samples, &split_candidates);
 
@@ -229,6 +233,7 @@ impl Tree {
             if num_tries < self.max_tries_per_split {
                 self.determine_split(
                     impurity_before,
+                    target_robustness,
                     samples,
                     dataset,
                     current_id,
@@ -263,7 +268,7 @@ impl Tree {
             if index != index_of_best_stats {
 
                 let (is_robust_split, num_removals_evaluated) =
-                    is_robust(best_split_stats, stats, self.target_robustness);
+                    is_robust(best_split_stats, stats, target_robustness);
 
                 if !is_robust_split {
                     at_least_one_non_robust = true;
@@ -277,6 +282,7 @@ impl Tree {
             //println!("Non-robust split found, retrying...");
             self.determine_split(
                 impurity_before,
+                target_robustness,
                 samples,
                 dataset,
                 current_id,
@@ -286,11 +292,60 @@ impl Tree {
         } else {
 
             if at_least_one_non_robust {
-                println!("Encountered non-robust split ({}) on {} records.",
-                         num_removals_required, samples.len());
+                println!("Encountered non-robust split ({}) on {} records in tree {}.",
+                         num_removals_required, samples.len(), self.index);
+
+                let alternative_splits: Vec<(usize, usize)> = split_stats.iter()
+                    .enumerate()
+                    .filter(|(index, _)| *index != index_of_best_stats)
+                    .filter_map(|(index, stats)| {
+                        let (is_robust_split, num_removals_evaluated) =
+                            is_robust(best_split_stats, stats, target_robustness);
+
+                        if is_robust_split {
+                            None
+                        } else {
+                            Some((index, num_removals_evaluated))
+                        }
+                    })
+                    .collect();
+
+                println!("Found {} alternative splits", alternative_splits.len());
+
+                for (index,num_removals_evaluated) in alternative_splits {
+
+                    let alternative_target_robustness = target_robustness - num_removals_evaluated;
+
+                    let mut copy_of_samples = samples.to_vec();
+
+                    let mut alternative_tree = Tree {
+                        index: self.index,
+                        rng: self.rng.clone(),
+                        tree_elements: HashMap::new(),
+                        min_leaf_size: self.min_leaf_size,
+                        num_attributes_to_try_per_split: self.num_attributes_to_try_per_split,
+                        max_tries_per_split: self.max_tries_per_split
+                    };
+
+                    alternative_tree.split_and_continue(
+                        alternative_target_robustness,
+                        copy_of_samples.as_mut_slice(),
+                        dataset,
+                        current_id,
+                        &mut constant_attribute_indexes.clone(),
+                        split_candidates.get(index).unwrap(),
+                        split_stats.get(index).unwrap()
+                    );
+
+                    println!(
+                        "Built alternative tree with {} elems",
+                        alternative_tree.tree_elements.len()
+                    );
+                }
             }
 
             self.split_and_continue(
+                target_robustness,
                 samples,
                 dataset,
                 current_id,
@@ -303,6 +358,7 @@ impl Tree {
 
     fn split_and_continue<D: Dataset, S: Sample>(
         &mut self,
+        target_robustness: usize,
         samples: &mut [S],
         dataset: &D,
         current_id: u32,
@@ -335,7 +391,6 @@ impl Tree {
 
         } else {
 
-            // TODO get rid of the clone here
             let mut constant_attribute_indexes_left = constant_attribute_indexes.clone();
             if constant_on_the_left {
                 //println!("Constant attribute found in {} records", record_ids_left.len());
@@ -344,6 +399,7 @@ impl Tree {
 
             self.determine_split(
                 best_split_stats.impurity_left,
+                target_robustness,
                 samples_left,
                 dataset,
                 left_child_id,
@@ -369,7 +425,6 @@ impl Tree {
 
         } else {
 
-            // TODO get rid of the clone here
             let mut constant_attribute_indexes_right = constant_attribute_indexes.clone();
             if constant_on_the_right {
                 //println!("Constant attribute found in {} records", record_ids_right.len());
@@ -378,6 +433,7 @@ impl Tree {
 
             self.determine_split(
                 best_split_stats.impurity_right,
+                target_robustness,
                 samples_right,
                 dataset,
                 right_child_id,
@@ -388,35 +444,31 @@ impl Tree {
     }
 }
 
-
 fn compute_split_stats<S: Sample>(
     impurity_before: f64,
     samples: &[S],
     split_candidates: &Vec<SplitCandidate>,
 ) -> Vec<SplitStats> {
 
-    let mut candidates_and_stats: Vec<(&SplitCandidate, SplitStats)> = split_candidates.iter()
-        .map(|candidate| (candidate, SplitStats::new()))
-        .collect();
+    let mut all_stats: Vec<SplitStats> = Vec::with_capacity(split_candidates.len());
 
     // TODO Create a SIMD version of that as in vectorized query processing
+    for candidate in split_candidates {
+        let mut stats = SplitStats::new();
+        let attribute_index = candidate.attribute_index;
+        let cut_off = candidate.cut_off;
 
-    for sample in samples {
-        let plus = sample.true_label();
-
-        for (candidate, stats) in candidates_and_stats.iter_mut() {
-            let is_left = sample.is_smaller_than(candidate.attribute_index, candidate.cut_off);
+        for sample in samples {
+            let plus = sample.true_label();
+            let is_left = sample.is_smaller_than(attribute_index, cut_off);
             stats.update(plus, is_left);
         }
+
+        stats.update_score(impurity_before);
+        all_stats.push(stats);
     }
 
-    let mut split_stats: Vec<SplitStats> = candidates_and_stats.into_iter()
-        .map(|(_, stats)| stats)
-        .collect();
-
-    split_stats.iter_mut().for_each(|stats| stats.update_score(impurity_before));
-
-    split_stats
+    all_stats
 }
 
 // TODO needs to be tested more thoroughly
