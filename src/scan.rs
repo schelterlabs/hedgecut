@@ -1,31 +1,19 @@
-extern crate hedgecut;
-
 use std::arch::x86_64::*;
 
-use hedgecut::dataset::{DefaultsDataset, Sample, DefaultsSample};
+use crate::dataset::Sample;
+use crate::split_stats::SplitStats;
 
-fn main() {
-
-    let all_samples = DefaultsDataset::samples_from_csv("datasets/defaults-train.csv");
-
-    let samples = &all_samples[..23577];
-
-    let attribute_index: u8 = 1;
-    let cut_off = 2;
-
-    split_counts(&samples, attribute_index, cut_off);
-    split_counts_simd(&samples, attribute_index, cut_off);
-}
-
-fn split_counts(
-    samples: &[DefaultsSample],
+// TODO write some unit tests using this
+#[allow(dead_code)]
+pub fn scan<S: Sample>(
+    samples: &[S],
     attribute_index: u8,
     cut_off: i8
-) {
-    let mut num_plus: isize = 0;
-    let mut num_left: isize = 0;
-    let mut num_plus_left: isize = 0;
-    let mut num_plus_right: isize = 0;
+) -> SplitStats {
+
+    let mut num_left: u32 = 0;
+    let mut num_plus_left: u32 = 0;
+    let mut num_plus_right: u32 = 0;
 
     for sample in samples {
         let is_left = sample.is_smaller_than(attribute_index, cut_off as u8);
@@ -37,34 +25,32 @@ fn split_counts(
             if is_plus {
                 num_plus_left += 1;
             }
-        }
-
-        if is_plus {
-            num_plus += 1;
-            if !is_left {
+        } else {
+            if is_plus {
                 num_plus_right += 1;
             }
         }
     }
 
-    println!(
-        "NO-SIMD: plus {}, left {}, plus left {}, plus right {}",
-        num_plus,
-        num_left,
+    let num_minus_left = num_left - num_plus_left;
+    let num_minus_right: u32 =  ((samples.len() - num_left as usize) as u32) - num_plus_right;
+
+    SplitStats::new(
         num_plus_left,
-        num_plus_right
-    );
+        num_minus_left,
+        num_plus_right,
+        num_minus_right,
+    )
 }
 
-fn split_counts_simd(
-    samples: &[DefaultsSample],
+pub fn scan_simd<S: Sample>(
+    samples: &[S],
     attribute_index: u8,
     cut_off: i8
-) {
+) -> SplitStats {
     let mut offset = 0;
     let batch_size = 16;
 
-    let mut num_plus: isize = 0;
     let mut num_left: isize = 0;
     let mut num_plus_left: isize = 0;
     let mut num_plus_right: isize = 0;
@@ -92,8 +78,6 @@ fn split_counts_simd(
 
         let mut left_accumulator =
             _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-        let mut plus_accumulator =
-            _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         let mut plus_left_accumulator =
             _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         let mut plus_right_accumulator =
@@ -107,8 +91,6 @@ fn split_counts_simd(
         let additional_samples = samples.len() % batch_size;
 
         while offset < samples.len() - additional_samples {
-
-            //println!("SIMD counting for offset {}", offset);
 
             let attribute_values_batch = _mm_set_epi8(
                 samples.get_unchecked(offset + 0).attribute_value(attribute_index) as i8,
@@ -148,8 +130,6 @@ fn split_counts_simd(
                 (samples.get_unchecked(offset + 15).true_label() as i8) * -1,
             );
 
-            plus_accumulator = _mm_sub_epi8(plus_accumulator, is_plus_batch);
-
             // Subtraction needed, https://devblogs.microsoft.com/oldnewthing/20141201-00/?p=43503
             let is_left_batch = _mm_cmplt_epi8(attribute_values_batch, cut_off_batch);
             left_accumulator = _mm_sub_epi8(left_accumulator, is_left_batch);
@@ -163,10 +143,6 @@ fn split_counts_simd(
             offset += batch_size;
 
             if offset % 127 == 0 { // i8.MAX_VALUE
-                _mm_store_si128(results_buffer_addr, plus_accumulator);
-                for count in result_buffer.iter() {
-                    num_plus += *count as isize;
-                }
 
                 _mm_store_si128(results_buffer_addr, left_accumulator);
                 for count in result_buffer.iter() {
@@ -185,8 +161,6 @@ fn split_counts_simd(
 
                 left_accumulator =
                     _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-                plus_accumulator =
-                    _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
                 plus_left_accumulator =
                     _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
                 plus_right_accumulator =
@@ -194,25 +168,8 @@ fn split_counts_simd(
             }
         }
 
-        println!(
-            "[Offset {}] plus {}, left {}, plus left {}, plus right {}",
-            offset,
-            num_plus,
-            num_left,
-            num_plus_left,
-            num_plus_right
-        );
-
-
         // Collect remaining results in the accumulators
         if offset % 127 != 0 { // i8.MAX_VALUE
-
-            println!("Emptying accumulators");
-
-            _mm_store_si128(results_buffer_addr, plus_accumulator);
-            for count in result_buffer.iter() {
-                num_plus += *count as isize;
-            }
 
             _mm_store_si128(results_buffer_addr, left_accumulator);
             for count in result_buffer.iter() {
@@ -232,11 +189,8 @@ fn split_counts_simd(
 
         if offset < samples.len() {
 
-            println!("Processing last samples without SIMD");
-
             // Process last samples without SIMD
             while offset < samples.len() {
-
 
                 let sample = samples.get_unchecked(offset);
                 let is_left = sample.is_smaller_than(attribute_index, cut_off as u8);
@@ -248,11 +202,8 @@ fn split_counts_simd(
                     if is_plus {
                         num_plus_left += 1;
                     }
-                }
-
-                if is_plus {
-                    num_plus += 1;
-                    if !is_left {
+                } else {
+                    if is_plus {
                         num_plus_right += 1;
                     }
                 }
@@ -261,12 +212,15 @@ fn split_counts_simd(
             }
         }
 
-        println!(
-            "plus {}, left {}, plus left {}, plus right {}",
-            num_plus,
-            num_left,
-            num_plus_left,
-            num_plus_right
-        );
+        let num_minus_left: u32 = (num_left - num_plus_left) as u32;
+        let num_minus_right: u32 =
+            ((samples.len() - num_left as usize) as u32) - num_plus_right as u32;
+
+        SplitStats::new(
+            num_plus_left as u32,
+            num_minus_left,
+            num_plus_right as u32,
+            num_minus_right,
+        )
     }
 }

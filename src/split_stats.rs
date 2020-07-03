@@ -12,31 +12,20 @@ pub struct SplitStats {
 
 impl SplitStats {
 
-    pub fn new() -> SplitStats {
+    pub fn new(
+        num_plus_left: u32,
+        num_minus_left: u32,
+        num_plus_right: u32,
+        num_minus_right: u32,
+    ) -> SplitStats {
         SplitStats {
-            num_plus_left: 0,
-            num_minus_left: 0,
-            num_plus_right: 0,
-            num_minus_right: 0,
+            num_plus_left,
+            num_minus_left,
+            num_plus_right,
+            num_minus_right,
             impurity_left: 0.0,
             impurity_right: 0.0,
             score: 0
-        }
-    }
-
-    pub fn update(&mut self, plus: bool, is_left: bool) {
-        if is_left {
-            if plus {
-                self.num_plus_left += 1;
-            } else {
-                self.num_minus_left += 1;
-            }
-        } else {
-            if plus {
-                self.num_plus_right += 1;
-            } else {
-                self.num_minus_right += 1;
-            }
         }
     }
 

@@ -7,6 +7,7 @@ use std::marker::Sync;
 use std::borrow::Cow;
 use hashbrown::HashMap;
 
+use crate::scan::scan_simd;
 
 use crate::split_stats::{SplitStats, is_robust};
 use crate::dataset::{Dataset, Sample};
@@ -89,7 +90,7 @@ impl ExtremelyRandomizedTrees {
 
 #[derive(Eq,PartialEq,Debug)]
 enum TreeElement {
-    Node { attribute_index: u8, cut_off: u8 },
+    Node { attribute_index: u8, cut_off: u8, is_robust: bool },
     Leaf { num_samples: u32, num_plus: u32 }
 }
 
@@ -97,6 +98,7 @@ struct Tree {
     index: usize,
     rng: XorShiftRng,
     tree_elements: HashMap<u32, TreeElement>,
+    alternatives: HashMap<u32, Vec<Tree>>,
     min_leaf_size: usize,
     num_attributes_to_try_per_split: usize,
     max_tries_per_split: usize,
@@ -123,6 +125,7 @@ impl Tree {
             index: tree_index as usize,
             rng,
             tree_elements: HashMap::new(),
+            alternatives: HashMap::new(),
             min_leaf_size,
             num_attributes_to_try_per_split,
             max_tries_per_split,
@@ -151,8 +154,8 @@ impl Tree {
         TreeElement::Leaf { num_samples, num_plus }
     }
 
-    fn node(attribute_index: u8, cut_off: u8) -> TreeElement {
-        TreeElement::Node { attribute_index, cut_off }
+    fn node(attribute_index: u8, cut_off: u8, is_robust: bool) -> TreeElement {
+        TreeElement::Node { attribute_index, cut_off, is_robust }
     }
 
     fn predict<S: Sample>(&self, sample: &S) -> bool {
@@ -165,7 +168,7 @@ impl Tree {
 
             match element {
 
-                TreeElement::Node { attribute_index, cut_off } => {
+                TreeElement::Node { attribute_index, cut_off, is_robust: _ } => {
                     if sample.is_smaller_than(*attribute_index, *cut_off) {
                         element_id = element_id * 2;
                     } else {
@@ -292,29 +295,36 @@ impl Tree {
         } else {
 
             if at_least_one_non_robust {
-                println!("Encountered non-robust split ({}) on {} records in tree {}.",
-                         num_removals_required, samples.len(), self.index);
 
                 let alternative_splits: Vec<(usize, usize)> = split_stats.iter()
                     .enumerate()
                     .filter(|(index, _)| *index != index_of_best_stats)
                     .filter_map(|(index, stats)| {
-                        let (is_robust_split, num_removals_evaluated) =
+                        let (is_robust_split, num_removals_required_to_break_split) =
                             is_robust(best_split_stats, stats, target_robustness);
 
                         if is_robust_split {
                             None
                         } else {
-                            Some((index, num_removals_evaluated))
+                            Some((index, num_removals_required_to_break_split))
                         }
                     })
                     .collect();
 
-                println!("Found {} alternative splits", alternative_splits.len());
+                println!(
+                    "Non-robust split ({}) on {} records with {} alternatives in tree {}.",
+                    num_removals_required,
+                    samples.len(),
+                    alternative_splits.len(),
+                    self.index
+                );
 
-                for (index,num_removals_evaluated) in alternative_splits {
+                let mut alternative_trees: Vec<Tree> = Vec::with_capacity(alternative_splits.len());
 
-                    let alternative_target_robustness = target_robustness - num_removals_evaluated;
+                for (index, num_removals_required_to_break_split) in alternative_splits {
+
+                    let alternative_target_robustness =
+                        target_robustness - num_removals_required_to_break_split;
 
                     let mut copy_of_samples = samples.to_vec();
 
@@ -322,11 +332,13 @@ impl Tree {
                         index: self.index,
                         rng: self.rng.clone(),
                         tree_elements: HashMap::new(),
+                        alternatives: HashMap::new(),
                         min_leaf_size: self.min_leaf_size,
                         num_attributes_to_try_per_split: self.num_attributes_to_try_per_split,
                         max_tries_per_split: self.max_tries_per_split
                     };
 
+                    // TODO we have to handle transitive split changes here?
                     alternative_tree.split_and_continue(
                         alternative_target_robustness,
                         copy_of_samples.as_mut_slice(),
@@ -334,15 +346,17 @@ impl Tree {
                         current_id,
                         &mut constant_attribute_indexes.clone(),
                         split_candidates.get(index).unwrap(),
-                        split_stats.get(index).unwrap()
+                        split_stats.get(index).unwrap(),
+                        true
                     );
 
-                    println!(
-                        "Built alternative tree with {} elems",
-                        alternative_tree.tree_elements.len()
-                    );
+                    alternative_trees.push(alternative_tree);
                 }
+
+                self.alternatives.insert(current_id, alternative_trees);
             }
+
+            let is_robust = !at_least_one_non_robust;
 
             self.split_and_continue(
                 target_robustness,
@@ -351,7 +365,8 @@ impl Tree {
                 current_id,
                 constant_attribute_indexes,
                 best_split_candidate,
-                best_split_stats
+                best_split_stats,
+                is_robust
             );
         }
     }
@@ -364,13 +379,18 @@ impl Tree {
         current_id: u32,
         constant_attribute_indexes: &mut Cow<[u8]>,
         best_split_candidate: &SplitCandidate,
-        best_split_stats: &SplitStats
+        best_split_stats: &SplitStats,
+        is_robust: bool
     ) {
 
         let (samples_left, constant_on_the_left, samples_right, constant_on_the_right) =
             split(samples, best_split_candidate);
 
-        let node = Tree::node(best_split_candidate.attribute_index, best_split_candidate.cut_off);
+        let node = Tree::node(
+            best_split_candidate.attribute_index,
+            best_split_candidate.cut_off,
+            is_robust
+        );
 
         self.tree_elements.insert(current_id, node);
 
@@ -454,15 +474,17 @@ fn compute_split_stats<S: Sample>(
 
     // TODO Create a SIMD version of that as in vectorized query processing
     for candidate in split_candidates {
-        let mut stats = SplitStats::new();
-        let attribute_index = candidate.attribute_index;
-        let cut_off = candidate.cut_off;
 
-        for sample in samples {
-            let plus = sample.true_label();
-            let is_left = sample.is_smaller_than(attribute_index, cut_off);
-            stats.update(plus, is_left);
-        }
+        let mut stats = scan_simd(samples, candidate.attribute_index, candidate.cut_off as i8);
+        // let mut stats = SplitStats::new();
+        // let attribute_index = candidate.attribute_index;
+        // let cut_off = candidate.cut_off;
+        //
+        // for sample in samples {
+        //     let plus = sample.true_label();
+        //     let is_left = sample.is_smaller_than(attribute_index, cut_off);
+        //     stats.update(plus, is_left);
+        // }
 
         stats.update_score(impurity_before);
         all_stats.push(stats);

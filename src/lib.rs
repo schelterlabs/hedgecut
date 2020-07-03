@@ -6,4 +6,4 @@ extern crate hashbrown;
 pub mod dataset;
 pub mod tree;
 mod split_stats;
-
+mod scan;
