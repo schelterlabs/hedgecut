@@ -471,20 +471,10 @@ fn compute_split_stats<S: Sample>(
 ) -> Vec<SplitStats> {
 
     let mut all_stats: Vec<SplitStats> = Vec::with_capacity(split_candidates.len());
-
-    // TODO Create a SIMD version of that as in vectorized query processing
+    
     for candidate in split_candidates {
 
         let mut stats = scan_simd(samples, candidate.attribute_index, candidate.cut_off as i8);
-        // let mut stats = SplitStats::new();
-        // let attribute_index = candidate.attribute_index;
-        // let cut_off = candidate.cut_off;
-        //
-        // for sample in samples {
-        //     let plus = sample.true_label();
-        //     let is_left = sample.is_smaller_than(attribute_index, cut_off);
-        //     stats.update(plus, is_left);
-        // }
 
         stats.update_score(impurity_before);
         all_stats.push(stats);
