@@ -102,12 +102,19 @@ struct Tree {
     index: usize,
     rng: XorShiftRng,
     tree_elements: HashMap<u32, TreeElement>,
-    alternatives: HashMap<u32, Vec<Tree>>,
+    alternatives: HashMap<u32, Vec<AlternativeTree>>,
     min_leaf_size: usize,
     num_attributes_to_try_per_split: usize,
     max_tries_per_split: usize,
 }
 
+struct AlternativeTree {
+    alternative_attribute_index: u8,
+    alternative_cut_off: u8,
+    split_stats_to_beat: SplitStats,
+    alternative_split_stats: SplitStats,
+    tree: Tree,
+}
 
 
 impl Tree {
@@ -200,7 +207,50 @@ impl Tree {
                 TreeElement::Node { attribute_index, cut_off, is_robust } => {
 
                     if !is_robust {
-                        println!("We hit a non-robust node, have to update statistics and check alternatives!")
+                        println!("We hit a non-robust node, have to update statistics and check alternatives!");
+
+                        let alternative_trees = &mut *self.alternatives.get_mut(&element_id).unwrap();
+
+                        alternative_trees.iter_mut().for_each(|alternative_tree| {
+                            let alternative_stats = &mut alternative_tree.alternative_split_stats;
+                            let best_stats = &mut alternative_tree.split_stats_to_beat;
+
+                            if sample.is_smaller_than(alternative_tree.alternative_attribute_index,
+                                alternative_tree.alternative_cut_off) {
+                                if sample.true_label() {
+                                    alternative_stats.num_plus_left -= 1;
+                                } else {
+                                    alternative_stats.num_minus_left -= 1;
+                                }
+                            } else {
+                                if sample.true_label() {
+                                    alternative_stats.num_plus_right -= 1;
+                                } else {
+                                    alternative_stats.num_minus_right -= 1;
+                                }
+                            }
+
+                            if sample.is_smaller_than(*attribute_index, *cut_off) {
+                                if sample.true_label() {
+                                    best_stats.num_plus_left -= 1;
+                                } else {
+                                    best_stats.num_minus_left -= 1;
+                                }
+                            } else {
+                                if sample.true_label() {
+                                    best_stats.num_plus_right -= 1;
+                                } else {
+                                    best_stats.num_minus_right -= 1;
+                                }
+                            }
+
+                            alternative_stats.update_score_and_impurity_before();
+                            best_stats.update_score_and_impurity_before();
+
+                            if alternative_stats.score > best_stats.score {
+                                println!("Change in non-robust split! Reorganisation required!");
+                            }
+                        });
                     }
 
                     if sample.is_smaller_than(*attribute_index, *cut_off) {
@@ -362,7 +412,8 @@ impl Tree {
                     self.index
                 );
 
-                let mut alternative_trees: Vec<Tree> = Vec::with_capacity(alternative_splits.len());
+                let mut alternative_trees: Vec<AlternativeTree> =
+                    Vec::with_capacity(alternative_splits.len());
 
                 for (index, num_removals_required_to_break_split) in alternative_splits {
 
@@ -371,7 +422,7 @@ impl Tree {
 
                     let mut copy_of_samples = samples.to_vec();
 
-                    let mut alternative_tree = Tree {
+                    let replacement_tree = Tree {
                         index: self.index,
                         rng: self.rng.clone(),
                         tree_elements: HashMap::new(),
@@ -381,15 +432,25 @@ impl Tree {
                         max_tries_per_split: self.max_tries_per_split
                     };
 
-                    // TODO we have to handle transitive split changes here?
-                    alternative_tree.split_and_continue(
+                    let alternative_split_candidate = split_candidates.get(index).unwrap();
+                    let alternative_split_stats = split_stats.get(index).unwrap();
+
+                    let mut alternative_tree = AlternativeTree {
+                        alternative_attribute_index: alternative_split_candidate.attribute_index,
+                        alternative_cut_off: alternative_split_candidate.cut_off,
+                        split_stats_to_beat: best_split_stats.clone(),
+                        alternative_split_stats: alternative_split_stats.clone(),
+                        tree: replacement_tree
+                    };
+
+                    alternative_tree.tree.split_and_continue(
                         alternative_target_robustness,
                         copy_of_samples.as_mut_slice(),
                         dataset,
                         current_id,
                         &mut constant_attribute_indexes.clone(),
-                        split_candidates.get(index).unwrap(),
-                        split_stats.get(index).unwrap(),
+                        alternative_split_candidate,
+                        alternative_split_stats,
                         true
                     );
 
