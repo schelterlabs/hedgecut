@@ -10,6 +10,7 @@ fn main() {
     let samples = DefaultsDataset::samples_from_csv("datasets/defaults-train.csv");
     let test_data = DefaultsDataset::samples_from_csv("datasets/defaults-test.csv");
 
+    let sample_to_forget = samples.get(0).unwrap().clone();
 
     let dataset = DefaultsDataset::from_samples(&samples);
 
@@ -20,7 +21,7 @@ fn main() {
 
     let training_start = Instant::now();
 
-    let trees = ExtremelyRandomizedTrees::fit(
+    let mut trees = ExtremelyRandomizedTrees::fit(
         &dataset,
         samples,
         seed,
@@ -58,4 +59,7 @@ fn main() {
     let accuracy = (t_p + t_n) as f64 / test_data.len() as f64;
     println!("Accuracy {}", accuracy);
     println!("[{}\t{}\n{}\t{}]", t_p, f_n, f_p, t_n);
+
+
+    trees.forget(&sample_to_forget);
 }

@@ -85,6 +85,10 @@ impl ExtremelyRandomizedTrees {
 
         num_plus * 2 > self.trees.len()
     }
+
+    pub fn forget<S>(&mut self, sample: &S) where S: Sample + Sync {
+        self.trees.par_iter_mut().for_each(|tree| { tree.forget(sample); })
+    }
 }
 
 
@@ -183,6 +187,46 @@ impl Tree {
         }
     }
 
+    fn forget<S: Sample>(&mut self, sample: &S) {
+
+        let mut element_id = 1;
+
+        loop {
+
+            let element = self.tree_elements.get(&element_id).unwrap();
+
+            match element {
+
+                TreeElement::Node { attribute_index, cut_off, is_robust } => {
+
+                    if !is_robust {
+                        println!("We hit a non-robust node, have to update statistics and check alternatives!")
+                    }
+
+                    if sample.is_smaller_than(*attribute_index, *cut_off) {
+                        element_id = element_id * 2;
+                    } else {
+                        element_id = (element_id * 2) + 1;
+                    }
+                }
+
+                TreeElement::Leaf { num_samples, num_plus } => {
+
+                    let new_num_samples = num_samples - 1;
+                    let new_num_plus = if sample.true_label() {
+                        num_plus - 1
+                    } else {
+                        *num_plus
+                    };
+
+                    let updated_leaf = Tree::leaf(new_num_samples, new_num_plus);
+                    self.tree_elements.insert(element_id, updated_leaf);
+                    break;
+                }
+            }
+        }
+    }
+
     fn generate_split_candidates<D: Dataset>(
         &mut self,
         dataset: &D,
@@ -266,7 +310,6 @@ impl Tree {
         let mut at_least_one_non_robust = false;
         let mut num_removals_required = 0;
 
-        // TODO we might need to check all and proceed
         for (index, stats) in split_stats.iter().enumerate() {
             if index != index_of_best_stats {
 

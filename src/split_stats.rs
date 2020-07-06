@@ -43,7 +43,7 @@ impl SplitStats {
         self.impurity_right = impurity_right;
     }
 
-    pub fn update_score2(&mut self) {
+    pub fn update_score_and_impurity_before(&mut self) {
         let (score, impurity_left, impurity_right) = gini_with_impurity_before(
             self.num_plus_left,
             self.num_minus_left,
@@ -175,8 +175,8 @@ fn weaken_split(
                     }
                 }
 
-                champion_stats.update_score2();
-                runnerup_stats.update_score2();
+                champion_stats.update_score_and_impurity_before();
+                runnerup_stats.update_score_and_impurity_before();
 
                 let new_score_diff = champion_stats.score as f64 - runnerup_stats.score as f64;
 
