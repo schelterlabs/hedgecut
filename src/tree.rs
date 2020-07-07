@@ -10,7 +10,7 @@ use hashbrown::HashMap;
 use crate::scan::{scan, scan_simd};
 use crate::utils::as_bytes;
 
-use crate::split_stats::{SplitStats, is_robust};
+use crate::split_stats::{SplitStats, is_robust, gini_impurity};
 use crate::dataset::{Dataset, Sample, AttributeType};
 
 #[derive(Eq,PartialEq,Clone,Debug)]
@@ -21,6 +21,7 @@ pub enum Split {
 
 
 impl Split {
+
     pub fn new_numerical(attribute_index: u8, cut_off: u8) -> Split {
         Split::Numerical { attribute_index, cut_off }
     }
@@ -116,14 +117,14 @@ struct Tree {
     index: usize,
     rng: XorShiftRng,
     tree_elements: HashMap<u64, TreeElement>,
-    alternatives: HashMap<u64, Vec<AlternativeTree>>,
+    alternative_subtrees: HashMap<u64, Vec<AlternativeTree>>,
     min_leaf_size: usize,
     num_attributes_to_try_per_split: usize,
     max_tries_per_split: usize,
 }
 
 struct AlternativeTree {
-    split_candidate: Split,
+    split: Split,
     split_stats: SplitStats,
     tree: Tree,
 }
@@ -148,16 +149,13 @@ impl Tree {
             index: tree_index as usize,
             rng,
             tree_elements: HashMap::new(),
-            alternatives: HashMap::new(),
+            alternative_subtrees: HashMap::new(),
             min_leaf_size,
             num_attributes_to_try_per_split,
             max_tries_per_split,
         };
 
-        // TODO this should use code from split_stats
-        let p_plus = dataset.num_plus() as f64 / dataset.num_records() as f64;
-
-        let gini_initial = 1.0 - (p_plus * p_plus);
+        let gini_initial = gini_impurity(dataset.num_plus(), dataset.num_records());
 
         let mut constant_attribute_indexes: Cow<[u8]> = Cow::from(Vec::new());
 
@@ -168,7 +166,8 @@ impl Tree {
             dataset,
             1,
             0,
-            &mut constant_attribute_indexes);
+            &mut constant_attribute_indexes
+        );
 
         return tree;
     }
@@ -205,7 +204,8 @@ impl Tree {
                 }
 
                 None => {
-                    let alternative_trees = current_tree.alternatives.get(&element_id).unwrap();
+                    let alternative_trees =
+                        current_tree.alternative_subtrees.get(&element_id).unwrap();
                     // First tree in this list is the current best one by definition
                     current_tree = &alternative_trees.first().unwrap().tree;
                 }
@@ -240,7 +240,7 @@ impl Tree {
 
                     let new_num_samples = num_samples - 1;
                     let new_num_plus = if sample.true_label() {
-                        num_plus - 1
+                        *num_plus - 1
                     } else {
                         *num_plus
                     };
@@ -252,15 +252,16 @@ impl Tree {
 
                 None => {
                     // We hit a non-robust node
-                    println!("We hit a non-robust node, have to update statistics and check alternatives!");
+                    println!("Hit a non-robust node!");
 
                     // First we have to update the split stats
-                    let alternative_trees = &mut *tree.alternatives.get_mut(&element_id).unwrap();
+                    let alternative_trees =
+                        &mut *tree.alternative_subtrees.get_mut(&element_id).unwrap();
 
                     alternative_trees.iter_mut().for_each(|alternative_tree| {
                         let stats = &mut alternative_tree.split_stats;
 
-                        if sample.is_left_of(&alternative_tree.split_candidate) {
+                        if sample.is_left_of(&alternative_tree.split) {
                             if sample.true_label() {
                                 stats.num_plus_left -= 1;
                             } else {
@@ -277,7 +278,6 @@ impl Tree {
                         stats.update_score_and_impurity_before();
                     });
 
-                    // Then we resort to put the best tree in the first position
                     // TODO alternative_trees could be a heap, but it probably does not matter
                     // Make sure the split with the highest score is in the first position
                     alternative_trees.sort_by(|tree_a, tree_b| {
@@ -309,7 +309,6 @@ impl Tree {
         attribute_indexes.shuffle(&mut self.rng);
 
 
-
         // TODO can we allocate once and reuse the vec somehow?
         let split_candidates: Vec<Split> = attribute_indexes.iter()
             .take(self.num_attributes_to_try_per_split)
@@ -318,8 +317,6 @@ impl Tree {
 
         split_candidates
     }
-
-
 
 
     fn determine_split<D: Dataset, S: Sample>(
@@ -420,7 +417,8 @@ impl Tree {
                     .collect();
 
                 println!(
-                    "Non-robust split ({}) on {} records with {} alternatives for element_id {} in tree {}.",
+                    "Non-robust split ({}) on {} records with {} alternatives \
+                    for element_id {} in tree {}.",
                     num_removals_required,
                     samples.len(),
                     alternative_splits.len(),
@@ -444,17 +442,17 @@ impl Tree {
                         index: self.index,
                         rng: self.rng.clone(),
                         tree_elements: HashMap::new(),
-                        alternatives: HashMap::new(),
+                        alternative_subtrees: HashMap::new(),
                         min_leaf_size: self.min_leaf_size,
                         num_attributes_to_try_per_split: self.num_attributes_to_try_per_split,
                         max_tries_per_split: self.max_tries_per_split
                     };
 
-                    let alternative_split_candidate = split_candidates.get(index).unwrap();
+                    let alternative_candidate_split = split_candidates.get(index).unwrap();
                     let alternative_split_stats = split_stats.get(index).unwrap();
 
                     let mut alternative_tree = AlternativeTree {
-                        split_candidate: alternative_split_candidate.clone(),
+                        split: alternative_candidate_split.clone(),
                         split_stats: alternative_split_stats.clone(),
                         tree: replacement_tree
                     };
@@ -465,7 +463,7 @@ impl Tree {
                         dataset,
                         current_id,
                         &mut constant_attribute_indexes.clone(),
-                        alternative_split_candidate,
+                        alternative_candidate_split,
                         alternative_split_stats
                     );
 
@@ -478,7 +476,7 @@ impl Tree {
                     tree_b.split_stats.score.cmp(&tree_a.split_stats.score)
                 });
 
-                self.alternatives.insert(current_id, alternative_trees);
+                self.alternative_subtrees.insert(current_id, alternative_trees);
 
             } else {
 
@@ -505,12 +503,6 @@ impl Tree {
         best_split: &Split,
         best_split_stats: &SplitStats
     ) {
-        // println!(
-        //     "current node {} on {},{}",
-        //     current_id,
-        //     best_split_stats.num_minus_left + best_split_stats.num_plus_left,
-        //     best_split_stats.num_plus_right + best_split_stats.num_minus_right
-        // );
 
         let (samples_left, constant_on_the_left, samples_right, constant_on_the_right) =
             split(samples, best_split);
@@ -594,12 +586,12 @@ impl Tree {
 fn compute_split_stats<S: Sample>(
     impurity_before: f64,
     samples: &[S],
-    split_candidates: &Vec<Split>,
+    candidate_splits: &Vec<Split>,
 ) -> Vec<SplitStats> {
 
-    let mut all_stats: Vec<SplitStats> = Vec::with_capacity(split_candidates.len());
+    let mut all_stats: Vec<SplitStats> = Vec::with_capacity(candidate_splits.len());
     
-    for candidate in split_candidates {
+    for candidate in candidate_splits {
 
         let mut stats = match candidate {
             Split::Numerical { attribute_index: _, cut_off: _ } => {
@@ -623,8 +615,6 @@ fn split<'a, S: Sample>(
     samples: &'a mut [S],
     split: &Split
 ) -> (&'a mut [S], bool, &'a mut [S], bool) {
-
-    //let cut_off = split_candidate.cut_off;
 
     let mut cursor = 0;
     let mut cursor_end = samples.len();
@@ -695,11 +685,11 @@ fn generate_random_split<D: Dataset>(
 
             let how_many = rng.gen_range(0, cardinality + 1);
             // TODO lets get rid of the allocation here...
-            let mut values: Vec<u8> = (0..(cardinality + 1)).collect();
-            values.shuffle(rng);
+            let mut possible_values: Vec<u8> = (0..(cardinality + 1)).collect();
+            possible_values.shuffle(rng);
 
             let mut subset: u64 = 0;
-            for bit_to_set in values.iter().take(how_many as usize) {
+            for bit_to_set in possible_values.iter().take(how_many as usize) {
                 subset |= (1 << *bit_to_set) as u64
             }
 

@@ -37,11 +37,17 @@ fn main() {
 
     evaluate(&trees, &test_data);
 
+    let removal1_start = Instant::now();
     trees.forget(&sample_to_forget);
+    let removal1_duration = removal1_start.elapsed();
+    println!("Removed sample in {} ys", removal1_duration.as_micros());
 
     evaluate(&trees, &test_data);
 
+    let removal2_start = Instant::now();
     trees.forget(&another_sample_to_forget);
+    let removal2_duration = removal2_start.elapsed();
+    println!("Removed sample in {} ys", removal2_duration.as_micros());
 
     evaluate(&trees, &test_data);
 }

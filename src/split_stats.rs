@@ -219,6 +219,12 @@ fn gini_with_impurity_before(
     )
 }
 
+#[inline(always)]
+pub fn gini_impurity(num_plus: u32, num_samples: u32) -> f64 {
+    let p_plus = num_plus as f64 / num_samples as f64;
+    1.0 - (p_plus * p_plus)
+}
+
 fn gini(
     impurity_before: f64,
     num_plus_left: u32,
@@ -234,15 +240,10 @@ fn gini(
         return (0, 0.0, 0.0);
     }
 
+    let gini_left = gini_impurity(num_plus_left, num_samples_left);
+    let gini_right = gini_impurity(num_plus_right, num_samples_right);
+
     let num_samples = num_samples_left + num_samples_right;
-
-    let p_plus_left = num_plus_left as f64 / num_samples_left as f64;
-
-    let gini_left = 1.0 - (p_plus_left * p_plus_left);
-
-    let p_plus_right = num_plus_right as f64 / num_samples_right as f64;
-
-    let gini_right = 1.0 - (p_plus_right * p_plus_right);
 
     let score = impurity_before -
         (num_samples_left as f64 / num_samples as f64) * gini_left -
