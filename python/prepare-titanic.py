@@ -31,7 +31,7 @@ fares, fares_discretizer = discretize(train_samples, 'Fare')
 siblings = train_samples['Siblings/Spouses Aboard'].values
 children = train_samples['Parents/Children Aboard'].values
 genders = train_samples.apply(lambda row: binarize(row, 'Sex', 'male'), axis=1)
-pclasses = train_samples['Pclass'].values
+pclasses = train_samples['Pclass'].values - 1
 labels = train_samples['Survived'].values
 
 record_id = 0
@@ -50,7 +50,7 @@ test_fares = fares_discretizer.transform(test_samples['Fare'].values.reshape(-1,
 test_siblings = test_samples['Siblings/Spouses Aboard'].values
 test_children = test_samples['Parents/Children Aboard'].values
 test_genders = test_samples.apply(lambda row: binarize(row, 'Sex', 'male'), axis=1)
-test_pclasses = test_samples['Pclass'].values
+test_pclasses = test_samples['Pclass'].values - 1
 test_labels = test_samples['Survived'].values
 
 with open('../datasets/titanic-test.csv', 'w') as file:

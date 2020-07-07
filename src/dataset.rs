@@ -1,14 +1,37 @@
 use std::str::FromStr;
+use crate::tree::Split;
 
 pub trait Dataset {
     fn num_records(&self) -> u32;
     fn num_plus(&self) -> u32;
     fn num_attributes(&self) -> u8;
     fn attribute_range(&self, index: u8) -> (u8, u8);
+    fn attribute_type(&self, index: u8) -> AttributeType;
+}
+
+pub enum AttributeType {
+    Numerical,
+    Categorical
 }
 
 pub trait Sample: Clone {
-    fn is_smaller_than(&self, attribute_index: u8, cut_off: u8) -> bool;
+
+    fn is_left_of(&self, split: &Split) -> bool {
+
+        let attribute_index = split.attribute_index();
+        let attribute_value = self.attribute_value(attribute_index);
+
+        match split {
+            Split::Numerical { attribute_index: _, cut_off } => {
+                attribute_value < *cut_off
+            },
+            Split::Categorical { attribute_index: _, subset } => {
+                *subset & (1 << attribute_value) as u64 != 0
+            }
+
+        }
+    }
+
     fn attribute_value(&self, attribute_index: u8) -> u8;
     fn true_label(&self) -> bool;
 }
@@ -30,19 +53,6 @@ pub struct TitanicSample {
 }
 
 impl Sample for TitanicSample {
-    fn is_smaller_than(&self, attribute_index: u8, cut_off: u8) -> bool {
-        let attribute = match attribute_index {
-            0 => &self.age,
-            1 => &self.fare,
-            2 => &self.siblings,
-            3 => &self.children,
-            4 => &self.gender,
-            5 => &self.pclass,
-            _ => panic!("Requested range for non-existing attribute {}!", attribute_index)
-        };
-
-        *attribute < cut_off
-    }
 
     fn attribute_value(&self, attribute_index: u8) -> u8 {
         match attribute_index {
@@ -64,10 +74,10 @@ impl Sample for TitanicSample {
 
 impl TitanicDataset {
 
-    pub fn from_samples(samples: &Vec<TitanicSample>) -> DefaultsDataset {
+    pub fn from_samples(samples: &Vec<TitanicSample>) -> TitanicDataset {
         let num_plus = samples.iter().filter(|sample| sample.true_label()).count();
 
-        DefaultsDataset {
+        TitanicDataset {
             num_records: samples.len() as u32,
             num_plus: num_plus as u32
         }
@@ -102,6 +112,7 @@ impl TitanicDataset {
 
         samples
     }
+
 }
 
 impl Dataset for TitanicDataset {
@@ -119,7 +130,19 @@ impl Dataset for TitanicDataset {
             2 => (0, 8),
             3 => (0, 6),
             4 => (0, 1),
-            5 => (1, 3),
+            5 => (0, 2),
+            _ => panic!("Requested range for non-existing attribute {}!", index)
+        }
+    }
+
+    fn attribute_type(&self, index: u8) -> AttributeType {
+        match index {
+            0 => AttributeType::Numerical,
+            1 => AttributeType::Numerical,
+            2 => AttributeType::Numerical,
+            3 => AttributeType::Numerical,
+            4 => AttributeType::Categorical,
+            5 => AttributeType::Categorical,
             _ => panic!("Requested range for non-existing attribute {}!", index)
         }
     }
@@ -253,6 +276,35 @@ impl Dataset for DefaultsDataset {
             _ => panic!("Requested non-existing attribute!")
         }
     }
+
+    fn attribute_type(&self, index: u8) -> AttributeType {
+        match index {
+            0 => AttributeType::Numerical,
+            1 => AttributeType::Numerical,
+            2 => AttributeType::Numerical,
+            3 => AttributeType::Numerical,
+            4 => AttributeType::Numerical,
+            5 => AttributeType::Numerical,
+            6 => AttributeType::Numerical,
+            7 => AttributeType::Numerical,
+            8 => AttributeType::Numerical,
+            9 => AttributeType::Numerical,
+            10 => AttributeType::Numerical,
+            11 => AttributeType::Numerical,
+            12 => AttributeType::Numerical,
+            13 => AttributeType::Numerical,
+            14 => AttributeType::Numerical,
+            15 => AttributeType::Numerical,
+            16 => AttributeType::Numerical,
+            17 => AttributeType::Numerical,
+            18 => AttributeType::Numerical,
+            19 => AttributeType::Numerical,
+            20 => AttributeType::Numerical,
+            21 => AttributeType::Numerical,
+            22 => AttributeType::Numerical,
+            _ => panic!("Requested non-existing attribute!")
+        }
+    }
 }
 
 #[derive(Eq,PartialEq,Debug,Clone)]
@@ -284,37 +336,6 @@ pub struct DefaultsSample {
 }
 
 impl Sample for DefaultsSample {
-
-    fn is_smaller_than(&self, attribute_index: u8, cut_off: u8) -> bool {
-        let attribute = match attribute_index {
-            0 => &self.limit,
-            1 => &self.sex,
-            2 => &self.education,
-            3 => &self.marriage,
-            4 => &self.age,
-            5 => &self.pay0,
-            6 => &self.pay2,
-            7 => &self.pay3,
-            8 => &self.pay4,
-            9 => &self.pay5,
-            10 => &self.pay6,
-            11 => &self.bill_amt1,
-            12 => &self.bill_amt2,
-            13 => &self.bill_amt3,
-            14 => &self.bill_amt4,
-            15 => &self.bill_amt5,
-            16 => &self.bill_amt6,
-            17 => &self.pay_amt1,
-            18 => &self.pay_amt2,
-            19 => &self.pay_amt3,
-            20 => &self.pay_amt4,
-            21 => &self.pay_amt5,
-            22 => &self.pay_amt6,
-            _ => panic!("Requested non-existing attribute!")
-        };
-
-        *attribute < cut_off
-    }
 
     fn attribute_value(&self, attribute_index: u8) -> u8 {
         match attribute_index {

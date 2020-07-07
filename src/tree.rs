@@ -7,19 +7,33 @@ use std::marker::Sync;
 use std::borrow::Cow;
 use hashbrown::HashMap;
 
-use crate::scan::scan_simd;
+use crate::scan::{scan, scan_simd};
+use crate::utils::as_bytes;
 
 use crate::split_stats::{SplitStats, is_robust};
-use crate::dataset::{Dataset, Sample};
+use crate::dataset::{Dataset, Sample, AttributeType};
 
-struct SplitCandidate {
-    pub attribute_index: u8,
-    pub cut_off: u8,
+#[derive(Eq,PartialEq,Clone,Debug)]
+pub enum Split {
+    Numerical { attribute_index: u8, cut_off: u8 },
+    Categorical { attribute_index: u8, subset: u64 }
 }
 
-impl SplitCandidate {
-    pub fn new(attribute_index: u8, cut_off: u8) -> SplitCandidate {
-        SplitCandidate { attribute_index, cut_off }
+
+impl Split {
+    pub fn new_numerical(attribute_index: u8, cut_off: u8) -> Split {
+        Split::Numerical { attribute_index, cut_off }
+    }
+
+    pub fn new_categorical(attribute_index: u8, subset: u64) -> Split {
+        Split::Categorical { attribute_index, subset }
+    }
+
+    pub fn attribute_index(&self) -> u8 {
+        match self {
+            Split::Numerical { attribute_index, cut_off: _ } => *attribute_index,
+            Split::Categorical { attribute_index, subset: _ } => *attribute_index,
+        }
     }
 }
 
@@ -94,7 +108,7 @@ impl ExtremelyRandomizedTrees {
 
 #[derive(Eq,PartialEq,Debug)]
 enum TreeElement {
-    Node { attribute_index: u8, cut_off: u8 },
+    Node { split: Split },
     Leaf { num_samples: u32, num_plus: u32 }
 }
 
@@ -109,8 +123,7 @@ struct Tree {
 }
 
 struct AlternativeTree {
-    attribute_index: u8,
-    cut_off: u8,
+    split_candidate: Split,
     split_stats: SplitStats,
     tree: Tree,
 }
@@ -164,8 +177,8 @@ impl Tree {
         TreeElement::Leaf { num_samples, num_plus }
     }
 
-    fn node(attribute_index: u8, cut_off: u8) -> TreeElement {
-        TreeElement::Node { attribute_index, cut_off }
+    fn node(split: Split) -> TreeElement {
+        TreeElement::Node { split }
     }
 
     fn predict<S: Sample>(&self, sample: &S) -> bool {
@@ -179,8 +192,8 @@ impl Tree {
 
             match element {
 
-                Some(TreeElement::Node { attribute_index, cut_off }) => {
-                    if sample.is_smaller_than(*attribute_index, *cut_off) {
+                Some(TreeElement::Node { split }) => {
+                    if sample.is_left_of(split) {
                         element_id = element_id * 2;
                     } else {
                         element_id = (element_id * 2) + 1;
@@ -214,9 +227,9 @@ impl Tree {
 
             match element {
 
-                Some(TreeElement::Node { attribute_index, cut_off }) => {
+                Some(TreeElement::Node { split }) => {
 
-                    if sample.is_smaller_than(*attribute_index, *cut_off) {
+                    if sample.is_left_of(split) {
                         element_id = element_id * 2;
                     } else {
                         element_id = (element_id * 2) + 1;
@@ -247,8 +260,7 @@ impl Tree {
                     alternative_trees.iter_mut().for_each(|alternative_tree| {
                         let stats = &mut alternative_tree.split_stats;
 
-                        if sample.is_smaller_than(alternative_tree.attribute_index,
-                                                  alternative_tree.cut_off) {
+                        if sample.is_left_of(&alternative_tree.split_candidate) {
                             if sample.true_label() {
                                 stats.num_plus_left -= 1;
                             } else {
@@ -287,7 +299,7 @@ impl Tree {
         &mut self,
         dataset: &D,
         constant_attribute_indexes: &Cow<[u8]>
-    ) -> Vec<SplitCandidate> {
+    ) -> Vec<Split> {
 
         let mut attribute_indexes: Vec<u8> = (0..dataset.num_attributes())
             // TODO This searches linearly, but does it matter here?
@@ -299,20 +311,16 @@ impl Tree {
 
 
         // TODO can we allocate once and reuse the vec somehow?
-        let split_candidates: Vec<SplitCandidate> = attribute_indexes.iter()
+        let split_candidates: Vec<Split> = attribute_indexes.iter()
             .take(self.num_attributes_to_try_per_split)
-            .map(|attribute_index| {
-
-                let (min_value, max_value) = dataset.attribute_range(*attribute_index);
-
-                let random_cut_off = self.rng.gen_range(min_value, max_value + 1);
-
-                SplitCandidate::new(*attribute_index, random_cut_off)
-            })
+            .map(|attribute_index| generate_random_split(&mut self.rng, dataset, *attribute_index))
             .collect();
 
         split_candidates
     }
+
+
+
 
     fn determine_split<D: Dataset, S: Sample>(
         &mut self,
@@ -446,8 +454,7 @@ impl Tree {
                     let alternative_split_stats = split_stats.get(index).unwrap();
 
                     let mut alternative_tree = AlternativeTree {
-                        attribute_index: alternative_split_candidate.attribute_index,
-                        cut_off: alternative_split_candidate.cut_off,
+                        split_candidate: alternative_split_candidate.clone(),
                         split_stats: alternative_split_stats.clone(),
                         tree: replacement_tree
                     };
@@ -495,17 +502,14 @@ impl Tree {
         dataset: &D,
         current_id: u32,
         constant_attribute_indexes: &mut Cow<[u8]>,
-        best_split_candidate: &SplitCandidate,
+        best_split_candidate: &Split,
         best_split_stats: &SplitStats
     ) {
 
         let (samples_left, constant_on_the_left, samples_right, constant_on_the_right) =
             split(samples, best_split_candidate);
 
-        let node = Tree::node(
-            best_split_candidate.attribute_index,
-            best_split_candidate.cut_off,
-        );
+        let node = Tree::node(best_split_candidate.clone());
 
         self.tree_elements.insert(current_id, node);
 
@@ -529,7 +533,8 @@ impl Tree {
             let mut constant_attribute_indexes_left = constant_attribute_indexes.clone();
             if constant_on_the_left {
                 //println!("Constant attribute found in {} records", record_ids_left.len());
-                constant_attribute_indexes_left.to_mut().push(best_split_candidate.attribute_index)
+                let attribute_index = best_split_candidate.attribute_index();
+                constant_attribute_indexes_left.to_mut().push(attribute_index);
             }
 
             self.determine_split(
@@ -563,7 +568,8 @@ impl Tree {
             let mut constant_attribute_indexes_right = constant_attribute_indexes.clone();
             if constant_on_the_right {
                 //println!("Constant attribute found in {} records", record_ids_right.len());
-                constant_attribute_indexes_right.to_mut().push(best_split_candidate.attribute_index)
+                let attribute_index = best_split_candidate.attribute_index();
+                constant_attribute_indexes_right.to_mut().push(attribute_index);
             }
 
             self.determine_split(
@@ -582,14 +588,22 @@ impl Tree {
 fn compute_split_stats<S: Sample>(
     impurity_before: f64,
     samples: &[S],
-    split_candidates: &Vec<SplitCandidate>,
+    split_candidates: &Vec<Split>,
 ) -> Vec<SplitStats> {
 
     let mut all_stats: Vec<SplitStats> = Vec::with_capacity(split_candidates.len());
     
     for candidate in split_candidates {
 
-        let mut stats = scan_simd(samples, candidate.attribute_index, candidate.cut_off as i8);
+        let mut stats = match candidate {
+            Split::Numerical { attribute_index: _, cut_off: _ } => {
+                scan_simd(samples, candidate)
+            },
+            Split::Categorical { attribute_index: _, subset: _ } => {
+                // TODO we also need a SIMD version here
+                scan(samples, &candidate)
+            },
+        };
 
         stats.update_score(impurity_before);
         all_stats.push(stats);
@@ -601,10 +615,10 @@ fn compute_split_stats<S: Sample>(
 // TODO needs to be tested more thoroughly
 fn split<'a, S: Sample>(
     samples: &'a mut [S],
-    split_candidate: &SplitCandidate
+    split: &Split
 ) -> (&'a mut [S], bool, &'a mut [S], bool) {
 
-    let cut_off = split_candidate.cut_off;
+    //let cut_off = split_candidate.cut_off;
 
     let mut cursor = 0;
     let mut cursor_end = samples.len();
@@ -618,9 +632,9 @@ fn split<'a, S: Sample>(
         // TODO Maybe remove boundary checks here later
 
         let sample = samples.get(cursor).unwrap();
-        let attribute_value: u8 = sample.attribute_value(split_candidate.attribute_index);
+        let attribute_value: u8 = sample.attribute_value(split.attribute_index());
 
-        if attribute_value < cut_off {
+        if sample.is_left_of(&split) {
 
             if constant_on_the_left {
                 if first_value_on_the_left.is_none() {
@@ -657,29 +671,33 @@ fn split<'a, S: Sample>(
     (samples_left, constant_on_the_left, samples_right, constant_on_the_right)
 }
 
-fn as_bytes(seed: u64, tree_index: u64) -> [u8; 16] {
+fn generate_random_split<D: Dataset>(
+    rng: &mut XorShiftRng,
+    dataset: &D,
+    attribute_index: u8
+) -> Split {
+    match dataset.attribute_type(attribute_index) {
+        AttributeType::Numerical => {
+            let (min_value, max_value) = dataset.attribute_range(attribute_index);
 
-    // TODO copy the seeds with bit shifts to get rid of the transmutes...
-    use std::mem::transmute;
-    let seed_bytes: [u8; 8] = unsafe { transmute(seed.to_be()) };
-    let tree_index_bytes: [u8; 8] = unsafe { transmute(tree_index.to_be()) };
+            let random_cut_off = rng.gen_range(min_value, max_value + 1);
 
-    [
-        *seed_bytes.get(0).unwrap(),
-        *seed_bytes.get(1).unwrap(),
-        *seed_bytes.get(2).unwrap(),
-        *seed_bytes.get(3).unwrap(),
-        *seed_bytes.get(4).unwrap(),
-        *seed_bytes.get(5).unwrap(),
-        *seed_bytes.get(6).unwrap(),
-        *seed_bytes.get(7).unwrap(),
-        *tree_index_bytes.get(0).unwrap(),
-        *tree_index_bytes.get(1).unwrap(),
-        *tree_index_bytes.get(2).unwrap(),
-        *tree_index_bytes.get(3).unwrap(),
-        *tree_index_bytes.get(4).unwrap(),
-        *tree_index_bytes.get(5).unwrap(),
-        *tree_index_bytes.get(6).unwrap(),
-        *tree_index_bytes.get(7).unwrap(),
-    ]
+            Split::new_numerical(attribute_index, random_cut_off)
+        },
+        AttributeType::Categorical => {
+            let (_, cardinality) = dataset.attribute_range(attribute_index);
+
+            let how_many = rng.gen_range(0, cardinality + 1);
+            // TODO lets get rid of the allocation here...
+            let mut values: Vec<u8> = (0..(cardinality + 1)).collect();
+            values.shuffle(rng);
+
+            let mut subset: u64 = 0;
+            for bit_to_set in values.iter().take(how_many as usize) {
+                subset |= (1 << *bit_to_set) as u64
+            }
+
+            Split::new_categorical(attribute_index, subset)
+        }
+    }
 }

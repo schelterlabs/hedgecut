@@ -2,13 +2,14 @@ use std::arch::x86_64::*;
 
 use crate::dataset::Sample;
 use crate::split_stats::SplitStats;
+use crate::tree::Split;
 
 // TODO write some unit tests using this
-#[allow(dead_code)]
+// TODO Make dead code again
+// #[allow(dead_code)]
 pub fn scan<S: Sample>(
     samples: &[S],
-    attribute_index: u8,
-    cut_off: i8
+    split: &Split,
 ) -> SplitStats {
 
     let mut num_left: u32 = 0;
@@ -16,7 +17,7 @@ pub fn scan<S: Sample>(
     let mut num_plus_right: u32 = 0;
 
     for sample in samples {
-        let is_left = sample.is_smaller_than(attribute_index, cut_off as u8);
+        let is_left = sample.is_left_of(split);
         let is_plus = sample.true_label();
 
         if is_left {
@@ -35,19 +36,21 @@ pub fn scan<S: Sample>(
     let num_minus_left = num_left - num_plus_left;
     let num_minus_right: u32 =  ((samples.len() - num_left as usize) as u32) - num_plus_right;
 
-    SplitStats::new(
-        num_plus_left,
-        num_minus_left,
-        num_plus_right,
-        num_minus_right,
-    )
+    SplitStats::new(num_plus_left, num_minus_left, num_plus_right, num_minus_right)
 }
 
 pub fn scan_simd<S: Sample>(
     samples: &[S],
-    attribute_index: u8,
-    cut_off: i8
+    split: &Split,
 ) -> SplitStats {
+
+    let (attribute_index, cut_off) = match split {
+        Split::Numerical { attribute_index, cut_off } => (*attribute_index, *cut_off as i8),
+        Split::Categorical { attribute_index: _, subset: _ } => {
+            panic!("Don't call this method with a categorical split!")
+        }
+    };
+
     let mut offset = 0;
     let batch_size = 16;
 
@@ -193,7 +196,7 @@ pub fn scan_simd<S: Sample>(
             while offset < samples.len() {
 
                 let sample = samples.get_unchecked(offset);
-                let is_left = sample.is_smaller_than(attribute_index, cut_off as u8);
+                let is_left = sample.is_left_of(split);
                 let is_plus = sample.true_label();
 
                 if is_left {
