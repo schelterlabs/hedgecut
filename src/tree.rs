@@ -94,7 +94,8 @@ impl ExtremelyRandomizedTrees {
 
 #[derive(Eq,PartialEq,Debug)]
 enum TreeElement {
-    Node { attribute_index: u8, cut_off: u8, is_robust: bool },
+    // TODO add robust / non-robust node
+    Node { attribute_index: u8, cut_off: u8 },
     Leaf { num_samples: u32, num_plus: u32 }
 }
 
@@ -109,10 +110,9 @@ struct Tree {
 }
 
 struct AlternativeTree {
-    alternative_attribute_index: u8,
-    alternative_cut_off: u8,
-    split_stats_to_beat: SplitStats,
-    alternative_split_stats: SplitStats,
+    attribute_index: u8,
+    cut_off: u8,
+    split_stats: SplitStats,
     tree: Tree,
 }
 
@@ -165,21 +165,22 @@ impl Tree {
         TreeElement::Leaf { num_samples, num_plus }
     }
 
-    fn node(attribute_index: u8, cut_off: u8, is_robust: bool) -> TreeElement {
-        TreeElement::Node { attribute_index, cut_off, is_robust }
+    fn node(attribute_index: u8, cut_off: u8) -> TreeElement {
+        TreeElement::Node { attribute_index, cut_off }
     }
 
     fn predict<S: Sample>(&self, sample: &S) -> bool {
 
+        let mut current_tree = self;
         let mut element_id = 1;
 
         loop {
 
-            let element = self.tree_elements.get(&element_id).unwrap();
+            let element = current_tree.tree_elements.get(&element_id);
 
             match element {
 
-                TreeElement::Node { attribute_index, cut_off, is_robust: _ } => {
+                Some(TreeElement::Node { attribute_index, cut_off }) => {
                     if sample.is_smaller_than(*attribute_index, *cut_off) {
                         element_id = element_id * 2;
                     } else {
@@ -187,71 +188,34 @@ impl Tree {
                     }
                 }
 
-                TreeElement::Leaf { num_samples, num_plus } => {
+                Some(TreeElement::Leaf { num_samples, num_plus }) => {
                     return (*num_plus * 2) > *num_samples;
+                }
+
+                None => {
+                    let alternative_trees = current_tree.alternatives.get(&element_id).unwrap();
+                    // First tree in this list is the current best one by definition
+                    current_tree = &alternative_trees.first().unwrap().tree;
                 }
             }
         }
     }
 
     fn forget<S: Sample>(&mut self, sample: &S) {
+        Tree::forget_from(self, sample, 1);
+    }
 
-        let mut element_id = 1;
+    fn forget_from<S: Sample>(tree: &mut Tree, sample: &S, element_id_to_start: u32) {
+
+        let mut element_id = element_id_to_start;
 
         loop {
 
-            let element = self.tree_elements.get(&element_id).unwrap();
+            let element = tree.tree_elements.get(&element_id);
 
             match element {
 
-                TreeElement::Node { attribute_index, cut_off, is_robust } => {
-
-                    if !is_robust {
-                        println!("We hit a non-robust node, have to update statistics and check alternatives!");
-
-                        let alternative_trees = &mut *self.alternatives.get_mut(&element_id).unwrap();
-
-                        alternative_trees.iter_mut().for_each(|alternative_tree| {
-                            let alternative_stats = &mut alternative_tree.alternative_split_stats;
-                            let best_stats = &mut alternative_tree.split_stats_to_beat;
-
-                            if sample.is_smaller_than(alternative_tree.alternative_attribute_index,
-                                alternative_tree.alternative_cut_off) {
-                                if sample.true_label() {
-                                    alternative_stats.num_plus_left -= 1;
-                                } else {
-                                    alternative_stats.num_minus_left -= 1;
-                                }
-                            } else {
-                                if sample.true_label() {
-                                    alternative_stats.num_plus_right -= 1;
-                                } else {
-                                    alternative_stats.num_minus_right -= 1;
-                                }
-                            }
-
-                            if sample.is_smaller_than(*attribute_index, *cut_off) {
-                                if sample.true_label() {
-                                    best_stats.num_plus_left -= 1;
-                                } else {
-                                    best_stats.num_minus_left -= 1;
-                                }
-                            } else {
-                                if sample.true_label() {
-                                    best_stats.num_plus_right -= 1;
-                                } else {
-                                    best_stats.num_minus_right -= 1;
-                                }
-                            }
-
-                            alternative_stats.update_score_and_impurity_before();
-                            best_stats.update_score_and_impurity_before();
-
-                            if alternative_stats.score > best_stats.score {
-                                println!("Change in non-robust split! Reorganisation required!");
-                            }
-                        });
-                    }
+                Some(TreeElement::Node { attribute_index, cut_off }) => {
 
                     if sample.is_smaller_than(*attribute_index, *cut_off) {
                         element_id = element_id * 2;
@@ -260,7 +224,7 @@ impl Tree {
                     }
                 }
 
-                TreeElement::Leaf { num_samples, num_plus } => {
+                Some(TreeElement::Leaf { num_samples, num_plus }) => {
 
                     let new_num_samples = num_samples - 1;
                     let new_num_plus = if sample.true_label() {
@@ -270,7 +234,50 @@ impl Tree {
                     };
 
                     let updated_leaf = Tree::leaf(new_num_samples, new_num_plus);
-                    self.tree_elements.insert(element_id, updated_leaf);
+                    tree.tree_elements.insert(element_id, updated_leaf);
+                    break;
+                }
+
+                None => {
+                    // We hit a non-robust node
+                    println!("We hit a non-robust node, have to update statistics and check alternatives!");
+
+                    // First we have to update the split stats
+                    let alternative_trees = &mut *tree.alternatives.get_mut(&element_id).unwrap();
+
+                    alternative_trees.iter_mut().for_each(|alternative_tree| {
+                        let stats = &mut alternative_tree.split_stats;
+
+                        if sample.is_smaller_than(alternative_tree.attribute_index,
+                                                  alternative_tree.cut_off) {
+                            if sample.true_label() {
+                                stats.num_plus_left -= 1;
+                            } else {
+                                stats.num_minus_left -= 1;
+                            }
+                        } else {
+                            if sample.true_label() {
+                                stats.num_plus_right -= 1;
+                            } else {
+                                stats.num_minus_right -= 1;
+                            }
+                        }
+
+                        stats.update_score_and_impurity_before();
+                    });
+
+                    // Then we resort to put the best tree in the first position
+                    // TODO alternative_trees could be a heap, but it probably does not matter
+                    // Make sure the split with the highest score is in the first position
+                    alternative_trees.sort_by(|tree_a, tree_b| {
+                        tree_b.split_stats.score.cmp(&tree_a.split_stats.score)
+                    });
+
+                    // Afterwards, we invoke the forgetting procedure on the alternative trees
+                    alternative_trees.iter_mut().for_each(|alternative_tree| {
+                        Tree::forget_from(&mut alternative_tree.tree, sample, element_id);
+                    });
+
                     break;
                 }
             }
@@ -341,6 +348,7 @@ impl Tree {
                 return;
             } else {
 
+                // We only need stats that are indepent of the split
                 let some_stats = split_stats.first().unwrap();
                 let num_plus = some_stats.num_plus_left + some_stats.num_plus_right;
                 let num_samples = some_stats.num_minus_left + some_stats.num_minus_right + num_plus;
@@ -389,7 +397,7 @@ impl Tree {
 
             if at_least_one_non_robust {
 
-                let alternative_splits: Vec<(usize, usize)> = split_stats.iter()
+                let mut alternative_splits: Vec<(usize, usize)> = split_stats.iter()
                     .enumerate()
                     .filter(|(index, _)| *index != index_of_best_stats)
                     .filter_map(|(index, stats)| {
@@ -405,12 +413,15 @@ impl Tree {
                     .collect();
 
                 println!(
-                    "Non-robust split ({}) on {} records with {} alternatives in tree {}.",
+                    "Non-robust split ({}) on {} records with {} alternatives for element_id {} in tree {}.",
                     num_removals_required,
                     samples.len(),
                     alternative_splits.len(),
+                    current_id,
                     self.index
                 );
+
+                alternative_splits.push((index_of_best_stats, 0));
 
                 let mut alternative_trees: Vec<AlternativeTree> =
                     Vec::with_capacity(alternative_splits.len());
@@ -436,10 +447,9 @@ impl Tree {
                     let alternative_split_stats = split_stats.get(index).unwrap();
 
                     let mut alternative_tree = AlternativeTree {
-                        alternative_attribute_index: alternative_split_candidate.attribute_index,
-                        alternative_cut_off: alternative_split_candidate.cut_off,
-                        split_stats_to_beat: best_split_stats.clone(),
-                        alternative_split_stats: alternative_split_stats.clone(),
+                        attribute_index: alternative_split_candidate.attribute_index,
+                        cut_off: alternative_split_candidate.cut_off,
+                        split_stats: alternative_split_stats.clone(),
                         tree: replacement_tree
                     };
 
@@ -450,28 +460,33 @@ impl Tree {
                         current_id,
                         &mut constant_attribute_indexes.clone(),
                         alternative_split_candidate,
-                        alternative_split_stats,
-                        true
+                        alternative_split_stats
                     );
 
                     alternative_trees.push(alternative_tree);
                 }
 
+                // TODO alternative_trees could be a heap, but it probably does not matter
+                // Make sure the split with the highest score is in the first position
+                alternative_trees.sort_by(|tree_a, tree_b| {
+                    tree_b.split_stats.score.cmp(&tree_a.split_stats.score)
+                });
+
+                println!("Inserting alternative for {} in {}", current_id, self.index);
                 self.alternatives.insert(current_id, alternative_trees);
+
+            } else {
+
+                self.split_and_continue(
+                    target_robustness,
+                    samples,
+                    dataset,
+                    current_id,
+                    constant_attribute_indexes,
+                    best_split_candidate,
+                    best_split_stats
+                );
             }
-
-            let is_robust = !at_least_one_non_robust;
-
-            self.split_and_continue(
-                target_robustness,
-                samples,
-                dataset,
-                current_id,
-                constant_attribute_indexes,
-                best_split_candidate,
-                best_split_stats,
-                is_robust
-            );
         }
     }
 
@@ -483,8 +498,7 @@ impl Tree {
         current_id: u32,
         constant_attribute_indexes: &mut Cow<[u8]>,
         best_split_candidate: &SplitCandidate,
-        best_split_stats: &SplitStats,
-        is_robust: bool
+        best_split_stats: &SplitStats
     ) {
 
         let (samples_left, constant_on_the_left, samples_right, constant_on_the_right) =
@@ -493,7 +507,6 @@ impl Tree {
         let node = Tree::node(
             best_split_candidate.attribute_index,
             best_split_candidate.cut_off,
-            is_robust
         );
 
         self.tree_elements.insert(current_id, node);
