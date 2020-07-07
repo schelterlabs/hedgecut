@@ -94,7 +94,6 @@ impl ExtremelyRandomizedTrees {
 
 #[derive(Eq,PartialEq,Debug)]
 enum TreeElement {
-    // TODO add robust / non-robust node
     Node { attribute_index: u8, cut_off: u8 },
     Leaf { num_samples: u32, num_plus: u32 }
 }
@@ -472,7 +471,6 @@ impl Tree {
                     tree_b.split_stats.score.cmp(&tree_a.split_stats.score)
                 });
 
-                println!("Inserting alternative for {} in {}", current_id, self.index);
                 self.alternatives.insert(current_id, alternative_trees);
 
             } else {
