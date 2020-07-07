@@ -115,8 +115,8 @@ enum TreeElement {
 struct Tree {
     index: usize,
     rng: XorShiftRng,
-    tree_elements: HashMap<u32, TreeElement>,
-    alternatives: HashMap<u32, Vec<AlternativeTree>>,
+    tree_elements: HashMap<u64, TreeElement>,
+    alternatives: HashMap<u64, Vec<AlternativeTree>>,
     min_leaf_size: usize,
     num_attributes_to_try_per_split: usize,
     max_tries_per_split: usize,
@@ -217,7 +217,7 @@ impl Tree {
         Tree::forget_from(self, sample, 1);
     }
 
-    fn forget_from<S: Sample>(tree: &mut Tree, sample: &S, element_id_to_start: u32) {
+    fn forget_from<S: Sample>(tree: &mut Tree, sample: &S, element_id_to_start: u64) {
 
         let mut element_id = element_id_to_start;
 
@@ -328,7 +328,7 @@ impl Tree {
         target_robustness: usize,
         samples: &mut [S],
         dataset: &D,
-        current_id: u32,
+        current_id: u64,
         num_tries: usize,
         constant_attribute_indexes: &mut Cow<[u8]>
     ) {
@@ -500,16 +500,22 @@ impl Tree {
         target_robustness: usize,
         samples: &mut [S],
         dataset: &D,
-        current_id: u32,
+        current_id: u64,
         constant_attribute_indexes: &mut Cow<[u8]>,
-        best_split_candidate: &Split,
+        best_split: &Split,
         best_split_stats: &SplitStats
     ) {
+        // println!(
+        //     "current node {} on {},{}",
+        //     current_id,
+        //     best_split_stats.num_minus_left + best_split_stats.num_plus_left,
+        //     best_split_stats.num_plus_right + best_split_stats.num_minus_right
+        // );
 
         let (samples_left, constant_on_the_left, samples_right, constant_on_the_right) =
-            split(samples, best_split_candidate);
+            split(samples, best_split);
 
-        let node = Tree::node(best_split_candidate.clone());
+        let node = Tree::node(best_split.clone());
 
         self.tree_elements.insert(current_id, node);
 
@@ -533,7 +539,7 @@ impl Tree {
             let mut constant_attribute_indexes_left = constant_attribute_indexes.clone();
             if constant_on_the_left {
                 //println!("Constant attribute found in {} records", record_ids_left.len());
-                let attribute_index = best_split_candidate.attribute_index();
+                let attribute_index = best_split.attribute_index();
                 constant_attribute_indexes_left.to_mut().push(attribute_index);
             }
 
@@ -568,7 +574,7 @@ impl Tree {
             let mut constant_attribute_indexes_right = constant_attribute_indexes.clone();
             if constant_on_the_right {
                 //println!("Constant attribute found in {} records", record_ids_right.len());
-                let attribute_index = best_split_candidate.attribute_index();
+                let attribute_index = best_split.attribute_index();
                 constant_attribute_indexes_right.to_mut().push(attribute_index);
             }
 

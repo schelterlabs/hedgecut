@@ -251,9 +251,9 @@ impl Dataset for DefaultsDataset {
     fn attribute_range(&self, index: u8) -> (u8, u8) {
         match index {
             0 => (0, 19),
-            1 => (1, 2),
-            2 => (1, 4),
-            3 => (1, 3),
+            1 => (0, 1),
+            2 => (0, 4),
+            3 => (0, 3),
             4 => (0, 19),
             5 => (0, 11),
             6 => (0, 11),
@@ -280,9 +280,9 @@ impl Dataset for DefaultsDataset {
     fn attribute_type(&self, index: u8) -> AttributeType {
         match index {
             0 => AttributeType::Numerical,
-            1 => AttributeType::Numerical,
-            2 => AttributeType::Numerical,
-            3 => AttributeType::Numerical,
+            1 => AttributeType::Categorical,
+            2 => AttributeType::Categorical,
+            3 => AttributeType::Categorical,
             4 => AttributeType::Numerical,
             5 => AttributeType::Numerical,
             6 => AttributeType::Numerical,

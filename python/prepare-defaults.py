@@ -24,7 +24,7 @@ train_samples, test_samples = train_test_split(raw_data, test_size=0.2)
 # ID,LIMIT_BAL,SEX,EDUCATION,MARRIAGE,AGE,PAY_0,PAY_2,PAY_3,PAY_4,PAY_5,PAY_6,BILL_AMT1,BILL_AMT2,BILL_AMT3,BILL_AMT4,BILL_AMT5,BILL_AMT6,PAY_AMT1,PAY_AMT2,PAY_AMT3,PAY_AMT4,PAY_AMT5,PAY_AMT6,default payment next month
 
 limit, limit_discretizer = discretize(train_samples, 'LIMIT_BAL')
-sex = train_samples['SEX'].values
+sex = train_samples['SEX'].values - 1
 education = train_samples['EDUCATION'].values
 marriage = train_samples['MARRIAGE'].values
 age, age_discretizer = discretize(train_samples, 'AGE')
@@ -84,7 +84,7 @@ with open('../datasets/defaults-train.csv', 'w') as file:
 #print(raw_data)
 
 limit = limit_discretizer.transform(test_samples['LIMIT_BAL'].values.reshape(-1, 1))
-sex = test_samples['SEX'].values
+sex = test_samples['SEX'].values - 1
 education = test_samples['EDUCATION'].values
 marriage = test_samples['MARRIAGE'].values
 age = age_discretizer.transform(test_samples['AGE'].values.reshape(-1, 1))

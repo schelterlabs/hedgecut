@@ -16,7 +16,7 @@ fn main() {
 
     let dataset = DefaultsDataset::from_samples(&samples);
 
-    let seed: u64 = 666;
+    let seed: u64 = 4545;
     let num_trees = 100;
     let min_leaf_size = 2;
     let max_tries_per_split = 50;
