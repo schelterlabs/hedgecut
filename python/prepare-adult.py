@@ -62,20 +62,6 @@ hours_per_week, hours_per_week_discretizer = discretize(train_samples, 'hours-pe
 native_country, native_country_encoder = ordinalize(train_samples, 'native-country')
 labels = train_samples.apply(lambda row: binarize(row, 'income', '>50K'), axis=1).values
 
-print(np.max(age))
-print(np.max(workclass))
-print(np.max(fnlwgt))
-print(np.max(education))
-print(np.max(marital_status))
-print(np.max(occupation))
-print(np.max(relationship))
-print(np.max(race))
-print(np.max(sex))
-print(np.max(capital_gain))
-#print(np.max(capital_loss))
-print(np.max(hours_per_week))
-print(np.max(native_country))
-
 
 with open('../datasets/adult-train.csv', 'w') as file:
 

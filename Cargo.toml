@@ -13,6 +13,10 @@ name = "evaluate_on_adult"
 path = "src/bin/evaluate_on_adult.rs"
 
 [[bin]]
+name = "evaluate_on_shopping"
+path = "src/bin/evaluate_on_shopping.rs"
+
+[[bin]]
 name = "evaluate_on_titanic"
 path = "src/bin/evaluate_on_titanic.rs"
 

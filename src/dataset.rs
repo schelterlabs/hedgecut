@@ -395,6 +395,7 @@ pub struct AdultSample {
 }
 
 impl AdultDataset {
+
     pub fn from_samples(samples: &Vec<AdultSample>) -> AdultDataset {
         let num_plus = samples.iter().filter(|sample| sample.true_label()).count();
 
@@ -517,6 +518,194 @@ impl Sample for AdultSample {
             10 => self.hours_per_week,
             11 => self.native_country,
             _ => panic!("Requested non-existing attribute {}!", attribute_index)
+        }
+    }
+
+    fn true_label(&self) -> bool {
+        self.label
+    }
+}
+
+pub struct ShoppingDataset {
+    pub num_records: u32,
+    pub num_plus: u32,
+}
+
+#[derive(Eq,PartialEq,Debug,Clone)]
+pub struct ShoppingSample {
+    pub administrative: u8,
+    pub administrative_duration: u8,
+    pub informational: u8,
+    pub informational_duration: u8,
+    pub product_related: u8,
+    pub product_related_duration: u8,
+    pub bounce_rates: u8,
+    pub exit_rates: u8,
+    pub page_values: u8,
+    pub special_day: u8,
+    pub month: u8,
+    pub operating_systems: u8,
+    pub browser: u8,
+    pub region: u8,
+    pub traffic_type: u8,
+    pub visitor_type: u8,
+    pub weekend: u8,
+    pub label: bool,
+}
+
+impl ShoppingDataset {
+
+    pub fn from_samples(samples: &Vec<ShoppingSample>) -> ShoppingDataset {
+        let num_plus = samples.iter().filter(|sample| sample.true_label()).count();
+
+        ShoppingDataset {
+            num_records: samples.len() as u32,
+            num_plus: num_plus as u32
+        }
+    }
+
+    pub fn samples_from_csv(file: &str) -> Vec<ShoppingSample> {
+
+        let mut samples: Vec<ShoppingSample> = Vec::new();
+
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .delimiter(b'\t')
+            .from_path(file)
+            .unwrap();
+
+        for result in reader.records() {
+            let record = result.unwrap();
+
+            let administrative = u8::from_str(record.get(1).unwrap()).unwrap();
+            let administrative_duration = u8::from_str(record.get(2).unwrap()).unwrap();
+            let informational = u8::from_str(record.get(3).unwrap()).unwrap();
+            let informational_duration = u8::from_str(record.get(4).unwrap()).unwrap();
+            let product_related = u8::from_str(record.get(5).unwrap()).unwrap();
+            let product_related_duration = u8::from_str(record.get(6).unwrap()).unwrap();
+            let bounce_rates = u8::from_str(record.get(7).unwrap()).unwrap();
+            let exit_rates = u8::from_str(record.get(8).unwrap()).unwrap();
+            let page_values = u8::from_str(record.get(9).unwrap()).unwrap();
+            let special_day = u8::from_str(record.get(10).unwrap()).unwrap();
+            let month = u8::from_str(record.get(11).unwrap()).unwrap();
+            let operating_systems = u8::from_str(record.get(12).unwrap()).unwrap();
+            let browser = u8::from_str(record.get(13).unwrap()).unwrap();
+            let region = u8::from_str(record.get(14).unwrap()).unwrap();
+            let traffic_type = u8::from_str(record.get(15).unwrap()).unwrap();
+            let visitor_type = u8::from_str(record.get(16).unwrap()).unwrap();
+            let weekend = u8::from_str(record.get(17).unwrap()).unwrap();
+            let label: bool = u8::from_str(record.get(18).unwrap()).unwrap() == 1;
+
+            let sample = ShoppingSample {
+                administrative,
+                administrative_duration,
+                informational,
+                informational_duration,
+                product_related,
+                product_related_duration,
+                bounce_rates,
+                exit_rates,
+                page_values,
+                special_day,
+                month,
+                operating_systems,
+                browser,
+                region,
+                traffic_type,
+                visitor_type,
+                weekend,
+                label
+            };
+
+            samples.push(sample);
+        }
+
+        samples
+    }
+}
+
+impl Dataset for ShoppingDataset {
+
+    fn num_records(&self) -> u32 {
+        self.num_records
+    }
+
+    fn num_plus(&self) -> u32 {
+        self.num_plus
+    }
+
+    fn num_attributes(&self) -> u8 { 17 }
+
+    fn attribute_range(&self, index: u8) -> (u8, u8) {
+        match index {
+            0 => (0, 7),
+            1 => (0, 8),
+            2 => (0, 3),
+            3 => (0, 3),
+            4 => (0, 15),
+            5 => (0, 15),
+            6 => (0, 8),
+            7 => (0, 15),
+            8 => (0, 3),
+            9 => (0, 1),
+            10 => (0, 9),
+            11 => (0, 7),
+            12 => (0, 12),
+            13 => (0, 8),
+            14 => (0, 19),
+            15 => (0, 2),
+            16 => (0, 1),
+            _ => panic!("Requested range for non-existing attribute!")
+        }
+    }
+
+    fn attribute_type(&self, index: u8) -> AttributeType {
+        match index {
+            0 => AttributeType::Numerical,
+            1 => AttributeType::Numerical,
+            2 => AttributeType::Numerical,
+            3 => AttributeType::Numerical,
+            4 => AttributeType::Numerical,
+            5 => AttributeType::Numerical,
+            6 => AttributeType::Numerical,
+            7 => AttributeType::Numerical,
+            8 => AttributeType::Numerical,
+            9 => AttributeType::Numerical,
+            10 => AttributeType::Categorical,
+            11 => AttributeType::Categorical,
+            12 => AttributeType::Categorical,
+            13 => AttributeType::Categorical,
+            14 => AttributeType::Categorical,
+            15 => AttributeType::Categorical,
+            16 => AttributeType::Categorical,
+            _ => panic!("Requested non-existing attribute!")
+        }
+    }
+}
+
+
+impl Sample for ShoppingSample {
+
+    fn attribute_value(&self, attribute_index: u8) -> u8 {
+        match attribute_index {
+            0 => self.administrative,
+            1 => self.administrative_duration,
+            2 => self.informational,
+            3 => self.informational_duration,
+            4 => self.product_related,
+            5 => self.product_related_duration,
+            6 => self.bounce_rates,
+            7 => self.exit_rates,
+            8 => self.page_values,
+            9 => self.special_day,
+            10 => self.month,
+            11 => self.operating_systems,
+            12 => self.browser,
+            13 => self.region,
+            14 => self.traffic_type,
+            15 => self.visitor_type,
+            16 => self.weekend,
+            _ => panic!("Requested non-existing attribute!")
         }
     }
 

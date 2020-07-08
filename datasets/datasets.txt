@@ -1,3 +1,7 @@
 https://archive.ics.uci.edu/ml/datasets/default+of+credit+card+clients
 https://archive.ics.uci.edu/ml/datasets/Adult
-https://archive.ics.uci.edu/ml/datasets/Bank+Marketing
+https://archive.ics.uci.edu/ml/datasets/Online+Shoppers+Purchasing+Intention+Dataset
+https://www.kaggle.com/sulianova/cardiovascular-disease-dataset
+
+# https://archive.ics.uci.edu/ml/datasets/Bank+Marketing
+# https://archive.ics.uci.edu/ml/datasets/Online+Retail
