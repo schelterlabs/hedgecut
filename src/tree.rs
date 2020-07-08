@@ -329,6 +329,20 @@ impl Tree {
         num_tries: usize,
         constant_attribute_indexes: &mut Cow<[u8]>
     ) {
+
+        // All attributes are constant, we create a leaf now
+        if constant_attribute_indexes.len() == dataset.num_attributes() as usize {
+
+            let num_plus = samples.iter().filter(|sample| sample.true_label()).count();
+            let num_samples = samples.len();
+
+            let leaf = Tree::leaf(num_samples as u32, num_plus as u32);
+
+            self.tree_elements.insert(current_id, leaf);
+
+            return;
+        }
+
         let candidate_splits = self.generate_candidate_splits(dataset, &constant_attribute_indexes);
 
         let split_stats = compute_split_stats(impurity_before, &samples, &candidate_splits);
@@ -690,7 +704,7 @@ fn generate_random_split<D: Dataset>(
 
             let mut subset: u64 = 0;
             for bit_to_set in possible_values.iter().take(how_many as usize) {
-                subset |= (1 << *bit_to_set) as u64
+                subset |= 1_u64 << *bit_to_set as u64
             }
 
             Split::new_categorical(attribute_index, subset)

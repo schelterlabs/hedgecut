@@ -9,6 +9,10 @@ name = "evaluate_on_defaults"
 path = "src/bin/evaluate_on_defaults.rs"
 
 [[bin]]
+name = "evaluate_on_adult"
+path = "src/bin/evaluate_on_adult.rs"
+
+[[bin]]
 name = "evaluate_on_titanic"
 path = "src/bin/evaluate_on_titanic.rs"
 

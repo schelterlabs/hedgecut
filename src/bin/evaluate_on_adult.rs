@@ -3,23 +3,23 @@ extern crate hedgecut;
 use std::time::Instant;
 
 use hedgecut::tree::ExtremelyRandomizedTrees;
-use hedgecut::dataset::DefaultsDataset;
+use hedgecut::dataset::AdultDataset;
 use hedgecut::evaluation::evaluate;
 
 fn main() {
 
-    let samples = DefaultsDataset::samples_from_csv("datasets/defaults-train.csv");
-    let test_data = DefaultsDataset::samples_from_csv("datasets/defaults-test.csv");
+    let samples = AdultDataset::samples_from_csv("datasets/adult-train.csv");
+    let test_data = AdultDataset::samples_from_csv("datasets/adult-test.csv");
 
     let sample_to_forget = samples.get(0).unwrap().clone();
     let another_sample_to_forget = samples.get(20).unwrap().clone();
 
-    let dataset = DefaultsDataset::from_samples(&samples);
+    let dataset = AdultDataset::from_samples(&samples);
 
     let seed: u64 = 4545;
     let num_trees = 100;
     let min_leaf_size = 2;
-    let max_tries_per_split = 300;
+    let max_tries_per_split = 50;
 
     let training_start = Instant::now();
 

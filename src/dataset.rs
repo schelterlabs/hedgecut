@@ -26,7 +26,7 @@ pub trait Sample: Clone {
                 attribute_value < *cut_off
             },
             Split::Categorical { attribute_index: _, subset } => {
-                *subset & (1 << attribute_value) as u64 != 0
+                *subset & (1_u64 << attribute_value as u64) != 0
             }
 
         }
@@ -250,29 +250,29 @@ impl Dataset for DefaultsDataset {
 
     fn attribute_range(&self, index: u8) -> (u8, u8) {
         match index {
-            0 => (0, 19),
+            0 => (0, 14),
             1 => (0, 1),
-            2 => (0, 4),
+            2 => (0, 6),
             3 => (0, 3),
-            4 => (0, 19),
-            5 => (0, 11),
-            6 => (0, 11),
-            7 => (0, 11),
-            8 => (0, 11),
-            9 => (0, 11),
-            10 => (0, 11),
-            11 => (0, 19),
-            12 => (0, 19),
-            13 => (0, 19),
-            14 => (0, 19),
-            15 => (0, 19),
-            16 => (0, 19),
-            17 => (0, 19),
-            18 => (0, 19),
-            19 => (0, 19),
-            20 => (0, 19),
-            21 => (0, 19),
-            22 => (0, 19),
+            4 => (0, 15),
+            5 => (0, 10),
+            6 => (0, 9),
+            7 => (0, 10),
+            8 => (0, 10),
+            9 => (0, 10),
+            10 => (0, 10),
+            11 => (0, 15),
+            12 => (0, 15),
+            13 => (0, 15),
+            14 => (0, 14),
+            15 => (0, 14),
+            16 => (0, 14),
+            17 => (0, 13),
+            18 => (0, 13),
+            19 => (0, 12),
+            20 => (0, 12),
+            21 => (0, 12),
+            22 => (0, 12),
             _ => panic!("Requested non-existing attribute!")
         }
     }
@@ -366,6 +366,159 @@ impl Sample for DefaultsSample {
         }
     }
 
+
+    fn true_label(&self) -> bool {
+        self.label
+    }
+}
+
+pub struct AdultDataset {
+    pub num_records: u32,
+    pub num_plus: u32,
+}
+
+#[derive(Eq,PartialEq,Debug,Clone)]
+pub struct AdultSample {
+    pub age: u8,
+    pub workclass: u8,
+    pub fnlwgt: u8,
+    pub education: u8,
+    pub marital_status: u8,
+    pub occupation: u8,
+    pub relationship: u8,
+    pub race: u8,
+    pub sex: u8,
+    pub capital_gain: u8,
+    pub hours_per_week: u8,
+    pub native_country: u8,
+    pub label: bool,
+}
+
+impl AdultDataset {
+    pub fn from_samples(samples: &Vec<AdultSample>) -> AdultDataset {
+        let num_plus = samples.iter().filter(|sample| sample.true_label()).count();
+
+        AdultDataset {
+            num_records: samples.len() as u32,
+            num_plus: num_plus as u32
+        }
+    }
+
+    pub fn samples_from_csv(file: &str) -> Vec<AdultSample> {
+
+        let mut samples: Vec<AdultSample> = Vec::new();
+
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .delimiter(b'\t')
+            .from_path(file)
+            .unwrap();
+
+        for result in reader.records() {
+            let record = result.unwrap();
+
+            let age = u8::from_str(record.get(1).unwrap()).unwrap();
+            let workclass = u8::from_str(record.get(2).unwrap()).unwrap();
+            let fnlwgt = u8::from_str(record.get(3).unwrap()).unwrap();
+            let education = u8::from_str(record.get(4).unwrap()).unwrap();
+            let marital_status = u8::from_str(record.get(5).unwrap()).unwrap();
+            let occupation = u8::from_str(record.get(6).unwrap()).unwrap();
+            let relationship = u8::from_str(record.get(7).unwrap()).unwrap();
+            let race = u8::from_str(record.get(8).unwrap()).unwrap();
+            let sex = u8::from_str(record.get(9).unwrap()).unwrap();
+            let capital_gain = u8::from_str(record.get(10).unwrap()).unwrap();
+            let hours_per_week = u8::from_str(record.get(11).unwrap()).unwrap();
+            let native_country = u8::from_str(record.get(12).unwrap()).unwrap();
+            let label = u8::from_str(record.get(13).unwrap()).unwrap() == 1;
+
+            let sample = AdultSample {
+                age,
+                workclass,
+                fnlwgt,
+                education,
+                marital_status,
+                occupation,
+                relationship,
+                race,
+                sex,
+                capital_gain,
+                hours_per_week,
+                native_country,
+                label
+            };
+
+            samples.push(sample);
+        }
+
+        samples
+    }
+}
+
+impl Dataset for AdultDataset {
+
+    fn num_records(&self) -> u32 { self.num_records }
+
+    fn num_plus(&self) -> u32 { self.num_plus }
+
+    fn num_attributes(&self) -> u8 { 12 }
+
+    fn attribute_range(&self, index: u8) -> (u8, u8) {
+        match index {
+            0 => (0, 15),
+            1 => (0, 6),
+            2 => (0, 15),
+            3 => (0, 15),
+            4 => (0, 6),
+            5 => (0, 13),
+            6 => (0, 5),
+            7 => (0, 4),
+            8 => (0, 1),
+            9 => (0, 1),
+            10 => (0, 7),
+            11 => (0, 40),
+            _ => panic!("Requested range for non-existing attribute {}!", index)
+        }
+    }
+
+    fn attribute_type(&self, index: u8) -> AttributeType {
+        match index {
+            0 => AttributeType::Numerical,
+            1 => AttributeType::Categorical,
+            2 => AttributeType::Numerical,
+            3 => AttributeType::Categorical,
+            4 => AttributeType::Categorical,
+            5 => AttributeType::Categorical,
+            6 => AttributeType::Categorical,
+            7 => AttributeType::Categorical,
+            8 => AttributeType::Categorical,
+            9 => AttributeType::Numerical,
+            10 => AttributeType::Numerical,
+            11 => AttributeType::Categorical,
+            _ => panic!("Requested range for non-existing attribute {}!", index)
+        }
+    }
+}
+
+impl Sample for AdultSample {
+
+    fn attribute_value(&self, attribute_index: u8) -> u8 {
+
+        match attribute_index {
+            0 => self.age,
+            1 => self.workclass,
+            2 => self.fnlwgt,
+            3 => self.education,
+            4 => self.marital_status,
+            5 => self.occupation,
+            6 => self.relationship,
+            7 => self.race,
+            8 => self.sex,
+            9 => self.capital_gain,
+            10 => self.hours_per_week,
+            11 => self.native_country,
+            _ => panic!("Requested non-existing attribute {}!", attribute_index)
+        }
+    }
 
     fn true_label(&self) -> bool {
         self.label
