@@ -295,7 +295,7 @@ impl Tree {
         }
     }
 
-    fn generate_split_candidates<D: Dataset>(
+    fn generate_candidate_splits<D: Dataset>(
         &mut self,
         dataset: &D,
         constant_attribute_indexes: &Cow<[u8]>
@@ -329,9 +329,9 @@ impl Tree {
         num_tries: usize,
         constant_attribute_indexes: &mut Cow<[u8]>
     ) {
-        let split_candidates = self.generate_split_candidates(dataset, &constant_attribute_indexes);
+        let candidate_splits = self.generate_candidate_splits(dataset, &constant_attribute_indexes);
 
-        let split_stats = compute_split_stats(impurity_before, &samples, &split_candidates);
+        let split_stats = compute_split_stats(impurity_before, &samples, &candidate_splits);
 
         let maybe_best_split_stats = split_stats.iter().enumerate()
             .filter(|(_, stats)| stats.score != 0)
@@ -367,7 +367,7 @@ impl Tree {
 
         let (index_of_best_stats, best_split_stats) = maybe_best_split_stats.unwrap();
 
-        let best_split_candidate = split_candidates.get(index_of_best_stats).unwrap();
+        let best_split_candidate = candidate_splits.get(index_of_best_stats).unwrap();
 
         let mut at_least_one_non_robust = false;
         let mut num_removals_required = 0;
@@ -448,7 +448,7 @@ impl Tree {
                         max_tries_per_split: self.max_tries_per_split
                     };
 
-                    let alternative_candidate_split = split_candidates.get(index).unwrap();
+                    let alternative_candidate_split = candidate_splits.get(index).unwrap();
                     let alternative_split_stats = split_stats.get(index).unwrap();
 
                     let mut alternative_tree = AlternativeTree {

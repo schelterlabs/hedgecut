@@ -1,1 +1,3 @@
 https://archive.ics.uci.edu/ml/datasets/default+of+credit+card+clients
+https://archive.ics.uci.edu/ml/datasets/Adult
+https://archive.ics.uci.edu/ml/datasets/Bank+Marketing
