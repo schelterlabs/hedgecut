@@ -713,3 +713,155 @@ impl Sample for ShoppingSample {
         self.label
     }
 }
+
+pub struct CardioDataset {
+    pub num_records: u32,
+    pub num_plus: u32,
+}
+
+#[derive(Eq,PartialEq,Debug,Clone)]
+pub struct CardioSample {
+    age: u8,
+    gender: u8,
+    height: u8,
+    weight: u8,
+    ap_hi: u8,
+    ap_lo: u8,
+    cholesterol: u8,
+    glucose: u8,
+    smoke: u8,
+    alcohol: u8,
+    active: u8,
+    label: bool,
+}
+
+impl CardioDataset {
+
+    pub fn from_samples(samples: &Vec<CardioSample>) -> CardioDataset {
+        let num_plus = samples.iter().filter(|sample| sample.true_label()).count();
+
+        CardioDataset {
+            num_records: samples.len() as u32,
+            num_plus: num_plus as u32
+        }
+    }
+
+    pub fn samples_from_csv(file: &str) -> Vec<CardioSample> {
+
+        let mut samples: Vec<CardioSample> = Vec::new();
+
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .delimiter(b'\t')
+            .from_path(file)
+            .unwrap();
+
+        for result in reader.records() {
+            let record = result.unwrap();
+
+            let age = u8::from_str(record.get(1).unwrap()).unwrap();
+            let gender = u8::from_str(record.get(2).unwrap()).unwrap();
+            let height = u8::from_str(record.get(3).unwrap()).unwrap();
+            let weight = u8::from_str(record.get(4).unwrap()).unwrap();
+            let ap_hi = u8::from_str(record.get(5).unwrap()).unwrap();
+            let ap_lo = u8::from_str(record.get(6).unwrap()).unwrap();
+            let cholesterol = u8::from_str(record.get(7).unwrap()).unwrap();
+            let glucose = u8::from_str(record.get(8).unwrap()).unwrap();
+            let smoke = u8::from_str(record.get(9).unwrap()).unwrap();
+            let alcohol = u8::from_str(record.get(10).unwrap()).unwrap();
+            let active = u8::from_str(record.get(11).unwrap()).unwrap();
+            let label = u8::from_str(record.get(12).unwrap()).unwrap() == 1;
+
+            let sample = CardioSample {
+                age,
+                gender,
+                height,
+                weight,
+                ap_hi,
+                ap_lo,
+                cholesterol,
+                glucose,
+                smoke,
+                alcohol,
+                active,
+                label,
+            };
+
+            samples.push(sample);
+        }
+
+        samples
+    }
+}
+
+impl Dataset for CardioDataset {
+
+    fn num_records(&self) -> u32 {
+        self.num_records
+    }
+
+    fn num_plus(&self) -> u32 {
+        self.num_plus
+    }
+
+    fn num_attributes(&self) -> u8 {
+        11
+    }
+
+    fn attribute_range(&self, index: u8) -> (u8, u8) {
+        match index {
+            0 => (0, 15),
+            1 => (0, 1),
+            2 => (0, 14),
+            3 => (0, 15),
+            4 => (0, 6),
+            5 => (0, 4),
+            6 => (0, 2),
+            7 => (0, 2),
+            8 => (0, 1),
+            9 => (0, 1),
+            10 => (0, 1),
+            _ => panic!("Requested range for non-existing attribute!")
+        }
+    }
+
+    fn attribute_type(&self, index: u8) -> AttributeType {
+        match index {
+            0 => AttributeType::Numerical,
+            1 => AttributeType::Categorical,
+            2 => AttributeType::Numerical,
+            3 => AttributeType::Numerical,
+            4 => AttributeType::Numerical,
+            5 => AttributeType::Numerical,
+            6 => AttributeType::Categorical,
+            7 => AttributeType::Categorical,
+            8 => AttributeType::Categorical,
+            9 => AttributeType::Categorical,
+            10 => AttributeType::Categorical,
+            _ => panic!("Requested type for non-existing attribute!")
+        }
+    }
+}
+
+impl Sample for CardioSample {
+    fn attribute_value(&self, attribute_index: u8) -> u8 {
+        match attribute_index {
+            0 => self.age,
+            1 => self.gender,
+            2 => self.height,
+            3 => self.weight,
+            4 => self.ap_hi,
+            5 => self.ap_lo,
+            6 => self.cholesterol,
+            7 => self.glucose,
+            8 => self.smoke,
+            9 => self.alcohol,
+            10 => self.active,
+            _ => panic!("Requested non-existing attribute!")
+        }
+    }
+
+    fn true_label(&self) -> bool {
+        self.label
+    }
+}
