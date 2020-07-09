@@ -865,3 +865,152 @@ impl Sample for CardioSample {
         self.label
     }
 }
+
+
+pub struct PropublicaDataset {
+    pub num_records: u32,
+    pub num_plus: u32,
+}
+
+#[derive(Eq,PartialEq,Debug,Clone)]
+pub struct PropublicaSample {
+    pub age: u8,
+    pub decile_score: u8,
+    pub priors_count: u8,
+    pub days_b_screening_arrest: u8,
+    pub is_recid: u8,
+    pub c_charge_degree: u8,
+    pub sex: u8,
+    pub age_cat: u8,
+    pub score_text: u8,
+    pub race: u8,
+    pub label: bool,
+}
+
+
+impl PropublicaDataset {
+
+    pub fn from_samples(samples: &Vec<PropublicaSample>) -> PropublicaDataset {
+        let num_plus = samples.iter().filter(|sample| sample.true_label()).count();
+
+        PropublicaDataset {
+            num_records: samples.len() as u32,
+            num_plus: num_plus as u32
+        }
+    }
+
+    pub fn samples_from_csv(file: &str) -> Vec<PropublicaSample> {
+
+        let mut samples: Vec<PropublicaSample> = Vec::new();
+
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .delimiter(b'\t')
+            .from_path(file)
+            .unwrap();
+
+        for result in reader.records() {
+            let record = result.unwrap();
+
+            let age = u8::from_str(record.get(1).unwrap()).unwrap();
+            let decile_score = u8::from_str(record.get(2).unwrap()).unwrap();
+            let priors_count = u8::from_str(record.get(3).unwrap()).unwrap();
+            let days_b_screening_arrest = u8::from_str(record.get(4).unwrap()).unwrap();
+            let is_recid = u8::from_str(record.get(5).unwrap()).unwrap();
+            let c_charge_degree = u8::from_str(record.get(6).unwrap()).unwrap();
+            let sex = u8::from_str(record.get(7).unwrap()).unwrap();
+            let age_cat = u8::from_str(record.get(8).unwrap()).unwrap();
+            let score_text = u8::from_str(record.get(9).unwrap()).unwrap();
+            let race = u8::from_str(record.get(10).unwrap()).unwrap();
+            let label = u8::from_str(record.get(11).unwrap()).unwrap() == 1;
+
+            let sample = PropublicaSample {
+                age,
+                decile_score,
+                priors_count,
+                days_b_screening_arrest,
+                is_recid,
+                c_charge_degree,
+                sex,
+                age_cat,
+                score_text,
+                race,
+                label
+            };
+
+            samples.push(sample);
+        }
+
+        samples
+    }
+}
+
+impl Dataset for PropublicaDataset {
+
+    fn num_records(&self) -> u32 {
+        self.num_records
+    }
+
+    fn num_plus(&self) -> u32 {
+        self.num_plus
+    }
+
+    fn num_attributes(&self) -> u8 {
+        10
+    }
+
+    fn attribute_range(&self, index: u8) -> (u8, u8) {
+        match index {
+            0 => (0, 15),
+            1 => (0, 8),
+            2 => (0, 7),
+            3 => (0, 4),
+            4 => (0, 1),
+            5 => (0, 1),
+            6 => (0, 1),
+            7 => (0, 2),
+            8 => (0, 2),
+            9 => (0, 5),
+            _ => panic!("Requested range for non-existing attribute!")
+        }
+    }
+
+    fn attribute_type(&self, index: u8) -> AttributeType {
+        match index {
+            0 => AttributeType::Numerical,
+            1 => AttributeType::Numerical,
+            2 => AttributeType::Numerical,
+            3 => AttributeType::Numerical,
+            4 => AttributeType::Categorical,
+            5 => AttributeType::Categorical,
+            6 => AttributeType::Categorical,
+            7 => AttributeType::Categorical,
+            8 => AttributeType::Categorical,
+            9 => AttributeType::Categorical,
+            _ => panic!("Requested type for non-existing attribute!")
+        }
+    }
+}
+
+impl Sample for PropublicaSample {
+
+    fn attribute_value(&self, attribute_index: u8) -> u8 {
+        match attribute_index {
+            0 => self.age,
+            1 => self.decile_score,
+            2 => self.priors_count,
+            3 => self.days_b_screening_arrest,
+            4 => self.is_recid,
+            5 => self.c_charge_degree,
+            6 => self.sex,
+            7 => self.age_cat,
+            8 => self.score_text,
+            9 => self.race,
+            _ => panic!("Requested non-existing attribute!")
+        }
+    }
+
+    fn true_label(&self) -> bool {
+        self.label
+    }
+}

@@ -60,7 +60,7 @@ impl ExtremelyRandomizedTrees {
 
         let target_robustness = ((dataset.num_records() as f64) / 1000.0).round() as usize;
 
-        println!(
+        eprintln!(
             "Fitting {} trees on {} records with num_attributes_to_try_per_split={}, \
              target_robustness={}, max_tries_per_split={}",
             num_trees,
@@ -252,7 +252,7 @@ impl Tree {
 
                 None => {
                     // We hit a non-robust node
-                    println!("Hit a non-robust node!");
+                    eprintln!("Hit a non-robust node!");
 
                     // First we have to update the split stats
                     let alternative_trees =
@@ -430,7 +430,7 @@ impl Tree {
                     })
                     .collect();
 
-                println!(
+                eprintln!(
                     "Non-robust split ({}) on {} records with {} alternatives \
                     for element_id {} in tree {}.",
                     num_removals_required,

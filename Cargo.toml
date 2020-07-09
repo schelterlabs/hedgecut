@@ -21,6 +21,10 @@ name = "evaluate_on_cardio"
 path = "src/bin/evaluate_on_cardio.rs"
 
 [[bin]]
+name = "evaluate_on_propublica"
+path = "src/bin/evaluate_on_propublica.rs"
+
+[[bin]]
 name = "evaluate_on_titanic"
 path = "src/bin/evaluate_on_titanic.rs"
 
