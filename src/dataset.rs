@@ -1014,3 +1014,139 @@ impl Sample for PropublicaSample {
         self.label
     }
 }
+
+
+
+pub struct GiveMeSomeCreditDataset {
+    pub num_records: u32,
+    pub num_plus: u32,
+}
+
+#[derive(Eq,PartialEq,Debug,Clone)]
+pub struct GiveMeSomeCreditSample {
+    pub revolving_util: u8,
+    pub age: u8,
+    pub past_due: u8,
+    pub debt_ratio: u8,
+    pub income: u8,
+    pub lines: u8,
+    pub real_estate: u8,
+    pub dependents: u8,
+    pub label: bool,
+}
+
+impl GiveMeSomeCreditDataset {
+
+    pub fn from_samples(samples: &Vec<GiveMeSomeCreditSample>) -> GiveMeSomeCreditDataset {
+        let num_plus = samples.iter().filter(|sample| sample.true_label()).count();
+
+        GiveMeSomeCreditDataset {
+            num_records: samples.len() as u32,
+            num_plus: num_plus as u32
+        }
+    }
+
+    pub fn samples_from_csv(file: &str) -> Vec<GiveMeSomeCreditSample> {
+
+        let mut samples: Vec<GiveMeSomeCreditSample> = Vec::new();
+
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .delimiter(b'\t')
+            .from_path(file)
+            .unwrap();
+
+        for result in reader.records() {
+            let record = result.unwrap();
+
+            let revolving_util = u8::from_str(record.get(1).unwrap()).unwrap();
+            let age = u8::from_str(record.get(2).unwrap()).unwrap();
+            let past_due = u8::from_str(record.get(3).unwrap()).unwrap();
+            let debt_ratio = u8::from_str(record.get(4).unwrap()).unwrap();
+            let income = u8::from_str(record.get(5).unwrap()).unwrap();
+            let lines = u8::from_str(record.get(6).unwrap()).unwrap();
+            let real_estate = u8::from_str(record.get(7).unwrap()).unwrap();
+            let dependents = u8::from_str(record.get(8).unwrap()).unwrap();
+            let label = u8::from_str(record.get(9).unwrap()).unwrap() == 1;
+
+            let sample = GiveMeSomeCreditSample {
+                revolving_util,
+                age,
+                past_due,
+                debt_ratio,
+                income,
+                lines,
+                real_estate,
+                dependents,
+                label
+            };
+
+            samples.push(sample);
+        }
+
+        samples
+    }
+}
+
+impl Dataset for GiveMeSomeCreditDataset {
+
+    fn num_records(&self) -> u32 {
+        self.num_records
+    }
+
+    fn num_plus(&self) -> u32 {
+        self.num_plus
+    }
+
+    fn num_attributes(&self) -> u8 {
+        8
+    }
+
+    fn attribute_range(&self, index: u8) -> (u8, u8) {
+        match index {
+            0 => (0, 14),
+            1 => (0, 1),
+            2 => (0, 15),
+            3 => (0, 15),
+            4 => (0, 15),
+            5 => (0, 13),
+            6 => (0, 3),
+            7 => (0, 3),
+            _ => panic!("Requested range for non-existing attribute!")
+        }
+    }
+
+    fn attribute_type(&self, index: u8) -> AttributeType {
+        match index {
+            0 => AttributeType::Numerical,
+            1 => AttributeType::Numerical,
+            2 => AttributeType::Numerical,
+            3 => AttributeType::Numerical,
+            4 => AttributeType::Numerical,
+            5 => AttributeType::Numerical,
+            6 => AttributeType::Numerical,
+            7 => AttributeType::Numerical,
+            _ => panic!("Requested type for non-existing attribute!")
+        }
+    }
+}
+
+impl Sample for GiveMeSomeCreditSample {
+    fn attribute_value(&self, attribute_index: u8) -> u8 {
+        match attribute_index {
+            0 => self.revolving_util,
+            1 => self.age,
+            2 => self.past_due,
+            3 => self.debt_ratio,
+            4 => self.income,
+            5 => self.lines,
+            6 => self.real_estate,
+            7 => self.dependents,
+            _ => panic!("Requested non-existing attribute!")
+        }
+    }
+
+    fn true_label(&self) -> bool {
+        self.label
+    }
+}
