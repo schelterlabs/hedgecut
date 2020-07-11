@@ -42,7 +42,7 @@ def binarize(row, attribute, positive_value):
 names = ['age', 'workclass', 'fnlwgt', 'education', 'education-num', 'marital-status', 'occupation', 'relationship',
          'race', 'sex', 'capital-gain', 'capital-loss', 'hours-per-week', 'native-country', 'income']
 
-raw_data = pd.read_csv('../datasets/adult.csv', sep=', ', na_values='?', names=names, index_col=False)
+raw_data = pd.read_csv('datasets/adult.csv', sep=', ', na_values='?', names=names, index_col=False)
 raw_data = raw_data.dropna()
 
 train_samples, test_samples = train_test_split(raw_data, test_size=0.2)
@@ -63,7 +63,7 @@ native_country, native_country_encoder = ordinalize(train_samples, 'native-count
 labels = train_samples.apply(lambda row: binarize(row, 'income', '>50K'), axis=1).values
 
 
-with open('../datasets/adult-train.csv', 'w') as file:
+with open('datasets/adult-train.csv', 'w') as file:
 
     file.write(f'record_id\tage\tworkclass\tfnlwgt\teducation\tmarital_status\toccupation\trelationship\trace\tsex\tcapital_gain\thours_per_week\tnative_country\tlabel\n')
 
@@ -103,7 +103,7 @@ native_country = native_country_encoder.transform(test_samples['native-country']
 labels = test_samples.apply(lambda row: binarize(row, 'income', '>50K'), axis=1).values
 
 
-with open('../datasets/adult-test.csv', 'w') as file:
+with open('datasets/adult-test.csv', 'w') as file:
 
     file.write(f'record_id\tage\tworkclass\tfnlwgt\teducation\tmarital_status\toccupation\trelationship\trace\tsex\tcapital_gain\thours_per_week\tnative_country\tlabel\n')
 

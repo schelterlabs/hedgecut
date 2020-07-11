@@ -60,15 +60,15 @@ impl ExtremelyRandomizedTrees {
 
         let target_robustness = ((dataset.num_records() as f64) / 1000.0).round() as usize;
 
-        eprintln!(
-            "Fitting {} trees on {} records with num_attributes_to_try_per_split={}, \
-             target_robustness={}, max_tries_per_split={}",
-            num_trees,
-            dataset.num_records(),
-            num_attributes_to_try_per_split,
-            target_robustness,
-            max_tries_per_split
-        );
+        // eprintln!(
+        //     "Fitting {} trees on {} records with num_attributes_to_try_per_split={}, \
+        //      target_robustness={}, max_tries_per_split={}",
+        //     num_trees,
+        //     dataset.num_records(),
+        //     num_attributes_to_try_per_split,
+        //     target_robustness,
+        //     max_tries_per_split
+        // );
 
         let trees: Vec<Tree> = (0..num_trees)
             .into_par_iter()
@@ -384,7 +384,7 @@ impl Tree {
         let best_split_candidate = candidate_splits.get(index_of_best_stats).unwrap();
 
         let mut at_least_one_non_robust = false;
-        let mut num_removals_required = 0;
+        let mut _num_removals_required = 0;
 
         for (index, stats) in split_stats.iter().enumerate() {
             if index != index_of_best_stats {
@@ -394,7 +394,7 @@ impl Tree {
 
                 if !is_robust_split {
                     at_least_one_non_robust = true;
-                    num_removals_required = num_removals_evaluated;
+                    _num_removals_required = num_removals_evaluated;
                     break;
                 }
             }
@@ -430,15 +430,15 @@ impl Tree {
                     })
                     .collect();
 
-                eprintln!(
-                    "Non-robust split ({}) on {} records with {} alternatives \
-                    for element_id {} in tree {}.",
-                    num_removals_required,
-                    samples.len(),
-                    alternative_splits.len(),
-                    current_id,
-                    self.index
-                );
+                // eprintln!(
+                //     "Non-robust split ({}) on {} records with {} alternatives \
+                //     for element_id {} in tree {}.",
+                //     num_removals_required,
+                //     samples.len(),
+                //     alternative_splits.len(),
+                //     current_id,
+                //     self.index
+                // );
 
                 alternative_splits.push((index_of_best_stats, 0));
 

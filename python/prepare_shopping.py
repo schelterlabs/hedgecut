@@ -26,7 +26,7 @@ def binarize(row, attribute, positive_value):
         return 0
 
 
-raw_data = pd.read_csv('../datasets/shopping.csv', sep=',', index_col=False)
+raw_data = pd.read_csv('datasets/shopping.csv', sep=',', index_col=False)
 raw_data = raw_data.dropna()
 
 train_samples, test_samples = train_test_split(raw_data, test_size=0.2)
@@ -69,26 +69,26 @@ visitor_type, visitor_type_encoder = ordinalize(train_samples, 'VisitorType')
 weekend = train_samples.apply(lambda row: binarize(row, 'Weekend', 'True'), axis=1).values
 labels = train_samples.apply(lambda row: binarize(row, 'Revenue', 'True'), axis=1).values
 
-print(np.max(administrative))
-print(np.max(administrative_duration))
-print(np.max(informational))
-print(np.max(informational_duration))
-print(np.max(product_related))
-print(np.max(product_related_duration))
-print(np.max(bounce_rates))
-print(np.max(exit_rates))
-print(np.max(page_values))
-print(np.max(special_day))
-print(np.max(month))
-print(np.max(operating_systems))
-print(np.max(browser))
-print(np.max(region))
-print(np.max(traffic_type))
-print(np.max(visitor_type))
-print(np.max(weekend))
+# print(np.max(administrative))
+# print(np.max(administrative_duration))
+# print(np.max(informational))
+# print(np.max(informational_duration))
+# print(np.max(product_related))
+# print(np.max(product_related_duration))
+# print(np.max(bounce_rates))
+# print(np.max(exit_rates))
+# print(np.max(page_values))
+# print(np.max(special_day))
+# print(np.max(month))
+# print(np.max(operating_systems))
+# print(np.max(browser))
+# print(np.max(region))
+# print(np.max(traffic_type))
+# print(np.max(visitor_type))
+# print(np.max(weekend))
 
 
-with open('../datasets/shopping-train.csv', 'w') as file:
+with open('datasets/shopping-train.csv', 'w') as file:
 
     file.write(f'record_id\tadministrative\tadministrative_duration\tinformational\tinformational_duration' +
                f'\tproduct_related\tproduct_related_duration\tbounce_rates\texit_rates\tpage_values\t' +
@@ -138,7 +138,7 @@ visitor_type = visitor_type_encoder.transform(test_samples['VisitorType'].values
 weekend = test_samples.apply(lambda row: binarize(row, 'Weekend', 'True'), axis=1).values
 labels = test_samples.apply(lambda row: binarize(row, 'Revenue', 'True'), axis=1).values
 
-with open('../datasets/shopping-test.csv', 'w') as file:
+with open('datasets/shopping-test.csv', 'w') as file:
 
     file.write(f'record_id\tadministrative\tadministrative_duration\tinformational\tinformational_duration' +
                f'\tproduct_related\tproduct_related_duration\tbounce_rates\texit_rates\tpage_values\t' +

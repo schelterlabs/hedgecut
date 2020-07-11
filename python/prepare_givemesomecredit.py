@@ -26,7 +26,7 @@ def binarize(row, attribute, positive_value):
         return 0
 
 
-df = pd.read_csv('../datasets/givemesomecredit.csv', sep=',', na_values='NA')
+df = pd.read_csv('datasets/givemesomecredit.csv', sep=',', na_values='NA')
 df = df.dropna()
 
 train_samples, test_samples = train_test_split(df, test_size=0.2)
@@ -47,18 +47,18 @@ real_estate, real_estate_discretizer = discretize(train_samples, 'NumberRealEsta
 dependents, dependents_discretizer = discretize(train_samples, 'NumberOfDependents')
 labels = train_samples['SeriousDlqin2yrs'].values
 
-print(np.max(revolving_util))
-print(np.max(age))
-print(np.max(past_due))
-print(np.max(debt_ratio))
-print(np.max(income))
-print(np.max(lines))
-#print(np.max(late))
-print(np.max(real_estate))
-#print(np.max(past_due_days))
-print(np.max(dependents))
+# print(np.max(revolving_util))
+# print(np.max(age))
+# print(np.max(past_due))
+# print(np.max(debt_ratio))
+# print(np.max(income))
+# print(np.max(lines))
+# #print(np.max(late))
+# print(np.max(real_estate))
+# #print(np.max(past_due_days))
+# print(np.max(dependents))
 
-with open('../datasets/givemesomecredit-train.csv', 'w') as file:
+with open('datasets/givemesomecredit-train.csv', 'w') as file:
 
     file.write(f'record_id\trevolving_util\tage\tpast_due\tdebt_ratio\tincome\tlines\treal_estate\t' +
                f'dependents\tlabel\n')
@@ -92,7 +92,7 @@ real_estate = real_estate_discretizer.transform(test_samples['NumberRealEstateLo
 dependents = dependents_discretizer.transform(test_samples['NumberOfDependents'].values.reshape(-1, 1))
 labels = test_samples['SeriousDlqin2yrs'].values
 
-with open('../datasets/givemesomecredit-test.csv', 'w') as file:
+with open('datasets/givemesomecredit-test.csv', 'w') as file:
 
     file.write(f'record_id\trevolving_util\tage\tpast_due\tdebt_ratio\tincome\tlines\treal_estate\t' +
                f'dependents\tlabel\n')

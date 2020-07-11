@@ -13,7 +13,7 @@ def discretize(data, attribute):
 
 conn = duckdb.connect()
 
-conn.execute("CREATE TABLE defaults_raw AS SELECT * FROM read_csv_auto('../datasets/defaults.csv');")
+conn.execute("CREATE TABLE defaults_raw AS SELECT * FROM read_csv_auto('datasets/defaults.csv');")
 
 raw_data = conn.execute("SELECT * FROM defaults_raw").fetchdf()
 
@@ -48,36 +48,32 @@ pay_amt5, pay_amt5_discretizer = discretize(train_samples, 'PAY_AMT5')
 pay_amt6, pay_amt6_discretizer = discretize(train_samples, 'PAY_AMT6')
 label = train_samples['default payment next month'].values
 
-print(np.max(limit))
-print(np.max(sex))
-print(np.max(education))
-print(np.max(marriage))
-print(np.max(age))
-print(np.max(pay0))
-print(np.max(pay2))
-print(np.max(pay3))
-print(np.max(pay4))
-print(np.max(pay5))
-print(np.max(pay6))
-print(np.max(bill_amt1))
-print(np.max(bill_amt2))
-print(np.max(bill_amt3))
-print(np.max(bill_amt4))
-print(np.max(bill_amt5))
-print(np.max(bill_amt6))
-print(np.max(pay_amt1))
-print(np.max(pay_amt2))
-print(np.max(pay_amt3))
-print(np.max(pay_amt4))
-print(np.max(pay_amt5))
-print(np.max(pay_amt6))
+# print(np.max(limit))
+# print(np.max(sex))
+# print(np.max(education))
+# print(np.max(marriage))
+# print(np.max(age))
+# print(np.max(pay0))
+# print(np.max(pay2))
+# print(np.max(pay3))
+# print(np.max(pay4))
+# print(np.max(pay5))
+# print(np.max(pay6))
+# print(np.max(bill_amt1))
+# print(np.max(bill_amt2))
+# print(np.max(bill_amt3))
+# print(np.max(bill_amt4))
+# print(np.max(bill_amt5))
+# print(np.max(bill_amt6))
+# print(np.max(pay_amt1))
+# print(np.max(pay_amt2))
+# print(np.max(pay_amt3))
+# print(np.max(pay_amt4))
+# print(np.max(pay_amt5))
+# print(np.max(pay_amt6))
 
 
-import sys
-sys.exit('asd')
-
-
-with open('../datasets/defaults-train.csv', 'w') as file:
+with open('datasets/defaults-train.csv', 'w') as file:
 
     file.write(f'record_id\tlimit\tsex\teducation\tmarriage\tage\tpay0\tpay2\tpay3\tpay4\tpay5\tpay6\tbill_amt1\tbill_amt2\tbill_amt3\tbill_amt4\tbill_amt5\tbill_amt6\tpay_amt1\tpay_amt2\tpay_amt3\tpay_amt4\tpay_amt5\tpay_amt6\tlabel\n')
 
@@ -137,7 +133,7 @@ pay_amt5 = pay_amt5_discretizer.transform(test_samples['PAY_AMT5'].values.reshap
 pay_amt6 = pay_amt6_discretizer.transform(test_samples['PAY_AMT6'].values.reshape(-1, 1))
 label = test_samples['default payment next month'].values
 
-with open('../datasets/defaults-test.csv', 'w') as file:
+with open('datasets/defaults-test.csv', 'w') as file:
 
     file.write(f'record_id\tlimit\tsex\teducation\tmarriage\tage\tpay0\tpay2\tpay3\tpay4\tpay5\tpay6\tbill_amt1\tbill_amt2\tbill_amt3\tbill_amt4\tbill_amt5\tbill_amt6\tpay_amt1\tpay_amt2\tpay_amt3\tpay_amt4\tpay_amt5\tpay_amt6\tlabel\n')
 

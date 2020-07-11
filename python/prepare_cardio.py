@@ -26,7 +26,7 @@ def binarize(row, attribute, positive_value):
         return 0
 
 
-raw_data = pd.read_csv('../datasets/cardio.csv', sep=';')
+raw_data = pd.read_csv('datasets/cardio.csv', sep=';')
 raw_data = raw_data.dropna()
 
 train_samples, test_samples = train_test_split(raw_data, test_size=0.2)
@@ -47,19 +47,19 @@ alcohol = train_samples['alco'].values
 active = train_samples['active'].values
 labels = train_samples['cardio'].values
 
-print(np.max(age))
-print(np.max(gender))
-print(np.max(height))
-print(np.max(weight))
-print(np.max(ap_hi))
-print(np.max(ap_lo))
-print(np.max(cholesterol))
-print(np.max(glucose))
-print(np.max(smoke))
-print(np.max(alcohol))
-print(np.max(active))
+# print(np.max(age))
+# print(np.max(gender))
+# print(np.max(height))
+# print(np.max(weight))
+# print(np.max(ap_hi))
+# print(np.max(ap_lo))
+# print(np.max(cholesterol))
+# print(np.max(glucose))
+# print(np.max(smoke))
+# print(np.max(alcohol))
+# print(np.max(active))
 
-with open('../datasets/cardio-train.csv', 'w') as file:
+with open('datasets/cardio-train.csv', 'w') as file:
 
     file.write(f'record_id\tage\tgender\theight\tweight\tap_hi\tap_lo\tcholesterol\tglucose\tsmoke\talcohol\t' +
                'active\tlabel\n')
@@ -95,7 +95,7 @@ alcohol = test_samples['alco'].values
 active = test_samples['active'].values
 labels = test_samples['cardio'].values
 
-with open('../datasets/cardio-test.csv', 'w') as file:
+with open('datasets/cardio-test.csv', 'w') as file:
 
     file.write(f'record_id\tage\tgender\theight\tweight\tap_hi\tap_lo\tcholesterol\tglucose\tsmoke\talcohol\t' +
                'active\tlabel\n')

@@ -29,7 +29,7 @@ def binarize(row, attribute, positive_value):
 https://github.com/IBM/AIF360/blob/master/aif360/algorithms/preprocessing/optim_preproc_helpers/data_preproc_functions.py
 https://github.com/fair-preprocessing/nips2017/blob/master/compas/code/Generate_Compas_Data.ipynb
 """
-df = pd.read_csv('../datasets/propublica-recidivism.csv', na_values='?', sep=',')
+df = pd.read_csv('datasets/propublica-recidivism.csv', na_values='?', sep=',')
 df = df[['age', 'c_charge_degree', 'race', 'age_cat', 'score_text',
          'sex', 'priors_count', 'days_b_screening_arrest', 'decile_score',
          'is_recid', 'two_year_recid', 'c_jail_in', 'c_jail_out']]
@@ -61,18 +61,18 @@ score_text, score_text_encoder = ordinalize(train_samples, 'score_text')
 race, race_encoder = ordinalize(train_samples, 'race')
 labels = train_samples['two_year_recid'].values
 
-print(np.max(age))
-print(np.max(decile_score))
-print(np.max(priors_count))
-print(np.max(days_b_screening_arrest))
-print(np.max(is_recid))
-print(np.max(c_charge_degree))
-print(np.max(sex))
-print(np.max(age_cat))
-print(np.max(score_text))
-print(np.max(race))
+# print(np.max(age))
+# print(np.max(decile_score))
+# print(np.max(priors_count))
+# print(np.max(days_b_screening_arrest))
+# print(np.max(is_recid))
+# print(np.max(c_charge_degree))
+# print(np.max(sex))
+# print(np.max(age_cat))
+# print(np.max(score_text))
+# print(np.max(race))
 
-with open('../datasets/propublica-train.csv', 'w') as file:
+with open('datasets/propublica-train.csv', 'w') as file:
 
     file.write(f'record_id\tage\tdecile_score\tpriors_count\tdays_b_screening_arrest\tis_recid\tc_charge_degree\t' +
                'sex\tage_cat\tscore_text\trace\tlabel\n')
@@ -107,7 +107,7 @@ score_text, score_text_encoder.transform(test_samples['score_text'].values.resha
 race, race_encoder.transform(test_samples['race'].values.reshape(-1, 1))
 labels = test_samples['two_year_recid'].values
 
-with open('../datasets/propublica-test.csv', 'w') as file:
+with open('datasets/propublica-test.csv', 'w') as file:
 
     file.write(f'record_id\tage\tdecile_score\tpriors_count\tdays_b_screening_arrest\tis_recid\tc_charge_degree\t' +
                'sex\tage_cat\tscore_text\trace\tlabel\n')
