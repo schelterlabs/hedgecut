@@ -5,10 +5,6 @@ authors = ["Sebastian Schelter <s.schelter@uva.nl>"]
 edition = "2018"
 
 [[bin]]
-name = "evaluate_on_defaults"
-path = "src/bin/evaluate_on_defaults.rs"
-
-[[bin]]
 name = "evaluate_on_adult"
 path = "src/bin/evaluate_on_adult.rs"
 
@@ -27,11 +23,6 @@ path = "src/bin/evaluate_on_propublica.rs"
 [[bin]]
 name = "evaluate_on_givemesomecredit"
 path = "src/bin/evaluate_on_givemesomecredit.rs"
-
-
-[[bin]]
-name = "evaluate_on_titanic"
-path = "src/bin/evaluate_on_titanic.rs"
 
 [[bin]]
 name = "play"

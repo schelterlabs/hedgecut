@@ -1,38 +1,13 @@
-import numpy as np
 import pandas as pd
 
-from sklearn.preprocessing import KBinsDiscretizer, LabelEncoder
+from experimentation.encoding import discretize, ordinalize, binarize
+
 from sklearn.model_selection import train_test_split
-
-
-def discretize(data, attribute):
-    discretizer = KBinsDiscretizer(n_bins=16, encode='ordinal', strategy='quantile')
-    discretizer = discretizer.fit(data[attribute].values.reshape(-1, 1))
-    transformed_values = discretizer.transform(data[attribute].values.reshape(-1, 1))
-    return transformed_values, discretizer
-
-
-def ordinalize(data, attribute):
-    encoder = LabelEncoder()
-    encoder = encoder.fit(data[attribute].values.reshape(1, -1)[0])
-    transformed_values = encoder.transform(data[attribute].values.reshape(1, -1)[0])
-    return transformed_values, encoder
-
-
-def binarize(row, attribute, positive_value):
-    if str(row[attribute]) == positive_value:
-        return 1
-    else:
-        return 0
-
 
 raw_data = pd.read_csv('datasets/cardio.csv', sep=';')
 raw_data = raw_data.dropna()
 
 train_samples, test_samples = train_test_split(raw_data, test_size=0.2)
-
-#print(train_samples.head())
-#print(raw_data['active'].value_counts())
 
 age, age_discretizer = discretize(train_samples, 'age')
 gender = train_samples['gender'].values - 1
@@ -46,18 +21,6 @@ smoke = train_samples['smoke'].values
 alcohol = train_samples['alco'].values
 active = train_samples['active'].values
 labels = train_samples['cardio'].values
-
-# print(np.max(age))
-# print(np.max(gender))
-# print(np.max(height))
-# print(np.max(weight))
-# print(np.max(ap_hi))
-# print(np.max(ap_lo))
-# print(np.max(cholesterol))
-# print(np.max(glucose))
-# print(np.max(smoke))
-# print(np.max(alcohol))
-# print(np.max(active))
 
 with open('datasets/cardio-train.csv', 'w') as file:
 

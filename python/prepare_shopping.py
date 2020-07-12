@@ -1,92 +1,36 @@
 import numpy as np
 import pandas as pd
 
-from sklearn.preprocessing import KBinsDiscretizer, LabelEncoder
+from experimentation.encoding import discretize, ordinalize, binarize
+
 from sklearn.model_selection import train_test_split
-
-
-def discretize(data, attribute):
-    discretizer = KBinsDiscretizer(n_bins=16, encode='ordinal', strategy='quantile')
-    discretizer = discretizer.fit(data[attribute].values.reshape(-1, 1))
-    transformed_values = discretizer.transform(data[attribute].values.reshape(-1, 1))
-    return transformed_values, discretizer
-
-
-def ordinalize(data, attribute):
-    encoder = LabelEncoder()
-    encoder = encoder.fit(data[attribute].values.reshape(1, -1)[0])
-    transformed_values = encoder.transform(data[attribute].values.reshape(1, -1)[0])
-    return transformed_values, encoder
-
-
-def binarize(row, attribute, positive_value):
-    if str(row[attribute]) == positive_value:
-        return 1
-    else:
-        return 0
 
 
 raw_data = pd.read_csv('datasets/shopping.csv', sep=',', index_col=False)
 raw_data = raw_data.dropna()
+raw_data['Weekend'] = raw_data['Weekend'].astype(str)
+raw_data['Revenue'] = raw_data['Revenue'].astype(str)
 
 train_samples, test_samples = train_test_split(raw_data, test_size=0.2)
-
-# Administrative,
-# Administrative_Duration,
-# Informational,
-# Informational_Duration,
-# ProductRelated,
-# ProductRelated_Duration,
-# BounceRates,
-# ExitRates,
-# PageValues,
-# SpecialDay,
-# Month, CAT
-# OperatingSystems-1, CAT
-# Browser-1, CAT
-# Region-1, CAT
-# TrafficType-1, CAT
-# VisitorType-1, CAT
-# Weekend, CAT, False True
-# Revenue, False, True
 
 administrative, administrative_discretizer = discretize(train_samples, 'Administrative')
 administrative_duration, administrative_duration_discretizer = discretize(train_samples, 'Administrative_Duration')
 informational, informational_discretizer = discretize(train_samples, 'Informational')
 informational_duration, informational_duration_discretizer = discretize(train_samples, 'Informational_Duration')
-product_related, product_related_discretizer = discretize(raw_data, 'ProductRelated')
+product_related, product_related_discretizer = discretize(train_samples, 'ProductRelated')
 product_related_duration, product_related_duration_discretizer = discretize(train_samples, 'ProductRelated_Duration')
 bounce_rates, bounce_rates_discretizer = discretize(train_samples, 'BounceRates')
 exit_rates, exit_rates_discretizer = discretize(train_samples, 'ExitRates')
 page_values, page_values_discretizer = discretize(train_samples, 'PageValues')
 special_day, special_day_discretizer = discretize(train_samples, 'SpecialDay')
-month, month_encoder = ordinalize(train_samples, 'Month')
+month, month_encoder = ordinalize(raw_data, train_samples, 'Month')
 operating_systems = train_samples['OperatingSystems'].values - 1
 browser = train_samples['Browser'].values - 1
 region = train_samples['Region'].values - 1
 traffic_type = train_samples['TrafficType'].values - 1
-visitor_type, visitor_type_encoder = ordinalize(train_samples, 'VisitorType')
+visitor_type, visitor_type_encoder = ordinalize(raw_data, train_samples, 'VisitorType')
 weekend = train_samples.apply(lambda row: binarize(row, 'Weekend', 'True'), axis=1).values
 labels = train_samples.apply(lambda row: binarize(row, 'Revenue', 'True'), axis=1).values
-
-# print(np.max(administrative))
-# print(np.max(administrative_duration))
-# print(np.max(informational))
-# print(np.max(informational_duration))
-# print(np.max(product_related))
-# print(np.max(product_related_duration))
-# print(np.max(bounce_rates))
-# print(np.max(exit_rates))
-# print(np.max(page_values))
-# print(np.max(special_day))
-# print(np.max(month))
-# print(np.max(operating_systems))
-# print(np.max(browser))
-# print(np.max(region))
-# print(np.max(traffic_type))
-# print(np.max(visitor_type))
-# print(np.max(weekend))
-
 
 with open('datasets/shopping-train.csv', 'w') as file:
 
@@ -120,11 +64,14 @@ with open('datasets/shopping-train.csv', 'w') as file:
         file.write(line + '\n')
 
 administrative = administrative_discretizer.transform(test_samples['Administrative'].values.reshape(-1, 1))
-administrative_duration = administrative_duration_discretizer.transform(test_samples['Administrative_Duration'].values.reshape(-1, 1))
+administrative_duration = administrative_duration_discretizer.transform(test_samples['Administrative_Duration']
+                                                                        .values.reshape(-1, 1))
 informational = informational_discretizer.transform(test_samples['Informational'].values.reshape(-1, 1))
-informational_duration = informational_duration_discretizer.transform(test_samples['Informational_Duration'].values.reshape(-1, 1))
+informational_duration = informational_duration_discretizer.transform(test_samples['Informational_Duration']
+                                                                      .values.reshape(-1, 1))
 product_related = product_related_discretizer.transform(test_samples['ProductRelated'].values.reshape(-1, 1))
-product_related_duration = product_related_duration_discretizer.transform(test_samples['ProductRelated_Duration'].values.reshape(-1, 1))
+product_related_duration = product_related_duration_discretizer.transform(test_samples['ProductRelated_Duration']
+                                                                          .values.reshape(-1, 1))
 bounce_rates = bounce_rates_discretizer.transform(test_samples['BounceRates'].values.reshape(-1, 1))
 exit_rates = exit_rates_discretizer.transform(test_samples['ExitRates'].values.reshape(-1, 1))
 page_values = page_values_discretizer.transform(test_samples['PageValues'].values.reshape(-1, 1))

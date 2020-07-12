@@ -4,3 +4,7 @@
 .idea/
 **/.ipynb_checkpoints/
 **/__pycache__/
+datasets/*-train.csv
+datasets/*-test.csv
+*results.txt
+

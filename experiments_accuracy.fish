@@ -10,10 +10,6 @@ for i in (seq 0 10);
     python3.6 python/sklearn_cardio.py
     RUSTFLAGS="-C target-cpu=native" cargo run --release --bin evaluate_on_cardio
 
-#    python3.6 python/prepare_defaults.py
-#    python3.6 python/sklearn_defaults.py
-#    RUSTFLAGS="-C target-cpu=native -C link-args=-Wl,-zstack-size=18194304" cargo run --release --bin evaluate_on_defaults
-
     python3.6 python/prepare_givemesomecredit.py
     python3.6 python/sklearn_givemesomecredit.py
     RUSTFLAGS="-C target-cpu=native" cargo run --release --bin evaluate_on_givemesomecredit

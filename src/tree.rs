@@ -349,7 +349,7 @@ impl Tree {
 
         let maybe_best_split_stats = split_stats.iter().enumerate()
             .filter(|(_, stats)| stats.score != 0)
-            .max_by(|(_, stats1), (_, stats2)| stats1.score.cmp(&stats2.score));
+            .min_by(|(_, stats1), (_, stats2)| stats1.score.cmp(&stats2.score));
 
         if maybe_best_split_stats.is_none() {
             if num_tries < self.max_tries_per_split {

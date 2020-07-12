@@ -1,5 +1,5 @@
 import pandas as pd
-from baseline.baseline import run_evaluation
+from experimentation.baseline import run_evaluation
 
 train_samples = pd.read_csv('datasets/adult-train.csv', sep='\t')
 test_samples = pd.read_csv('datasets/adult-test.csv', sep='\t')

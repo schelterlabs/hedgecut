@@ -1,29 +1,9 @@
-import numpy as np
 import pandas as pd
 
-from sklearn.preprocessing import KBinsDiscretizer, LabelEncoder
+from experimentation.encoding import discretize, ordinalize, binarize
+
 from sklearn.model_selection import train_test_split
 
-
-def discretize(data, attribute):
-    discretizer = KBinsDiscretizer(n_bins=16, encode='ordinal', strategy='quantile')
-    discretizer = discretizer.fit(data[attribute].values.reshape(-1, 1))
-    transformed_values = discretizer.transform(data[attribute].values.reshape(-1, 1))
-    return transformed_values, discretizer
-
-
-def ordinalize(data, attribute):
-    encoder = LabelEncoder()
-    encoder = encoder.fit(data[attribute].values.reshape(1, -1)[0])
-    transformed_values = encoder.transform(data[attribute].values.reshape(1, -1)[0])
-    return transformed_values, encoder
-
-
-def binarize(row, attribute, positive_value):
-    if str(row[attribute]) == positive_value:
-        return 1
-    else:
-        return 0
 
 """The custom pre-processing function is adapted from
 https://github.com/IBM/AIF360/blob/master/aif360/algorithms/preprocessing/optim_preproc_helpers/data_preproc_functions.py
@@ -47,8 +27,6 @@ df = df[['age', 'decile_score', 'priors_count', 'days_b_screening_arrest', 'deci
 
 train_samples, test_samples = train_test_split(df, test_size=0.2)
 
-# print(train_samples['two_year_recid'].value_counts())
-
 age, age_discretizer = discretize(train_samples, 'age')
 decile_score, decile_score_discretizer = discretize(train_samples, 'decile_score')
 priors_count, priors_count_discretizer = discretize(train_samples, 'priors_count')
@@ -56,21 +34,10 @@ days_b_screening_arrest, days_b_screening_arrest_discretizer = discretize(train_
 is_recid = train_samples['is_recid'].values
 c_charge_degree = train_samples.apply(lambda row: binarize(row, 'c_charge_degree', 'F'), axis=1).values
 sex = train_samples.apply(lambda row: binarize(row, 'sex', 'Female'), axis=1).values
-age_cat, age_cat_encoder = ordinalize(train_samples, 'age_cat')
-score_text, score_text_encoder = ordinalize(train_samples, 'score_text')
-race, race_encoder = ordinalize(train_samples, 'race')
+age_cat, age_cat_encoder = ordinalize(df, train_samples, 'age_cat')
+score_text, score_text_encoder = ordinalize(df, train_samples, 'score_text')
+race, race_encoder = ordinalize(df, train_samples, 'race')
 labels = train_samples['two_year_recid'].values
-
-# print(np.max(age))
-# print(np.max(decile_score))
-# print(np.max(priors_count))
-# print(np.max(days_b_screening_arrest))
-# print(np.max(is_recid))
-# print(np.max(c_charge_degree))
-# print(np.max(sex))
-# print(np.max(age_cat))
-# print(np.max(score_text))
-# print(np.max(race))
 
 with open('datasets/propublica-train.csv', 'w') as file:
 
