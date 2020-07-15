@@ -2,6 +2,7 @@ use crate::dataset::{Sample, Dataset};
 use crate::tree::ExtremelyRandomizedTrees;
 use rand::{thread_rng, RngCore, Rng};
 use std::time::Instant;
+use rand::seq::SliceRandom;
 
 pub fn evaluate<S: Sample + Sync>(
     name: &str,
@@ -183,6 +184,86 @@ pub fn train_time<D: Dataset + Sync, S: Sample + Sync>(
     );
     let training_duration = training_start.elapsed();
     println!("{},hedgecut,{}", name, training_duration.as_millis());
+}
 
+#[derive(Clone)]
+enum Request<S: Sample> {
+    Predict(S),
+    Forget(S),
+}
 
+pub fn stress_test<D: Dataset + Sync, S: Sample + Sync>(
+    name: &str,
+    dataset: D,
+    samples: Vec<S>,
+    test_data: Vec<S>,
+    multiplication_factor: usize,
+    num_trees: usize,
+    min_leaf_size: usize,
+    max_tries_per_split: usize,
+) {
+    let mut rng = thread_rng();
+
+    let target_robustness = ((dataset.num_records() as f64) / 1000.0).round() as usize;
+
+    let mut stress_test_data = Vec::new();
+    for _ in 0..multiplication_factor {
+        for sample in &test_data {
+            stress_test_data.push(Request::Predict(sample.clone()));
+        }
+    }
+
+    stress_test_data.shuffle(&mut rng);
+
+    let mut stress_test_data_with_forgets = stress_test_data.clone();
+
+    (0..target_robustness)
+        .for_each(|_| {
+            let sample_to_forget_index = rng.gen_range(0, samples.len());
+            let sample_to_forget = samples.get(sample_to_forget_index).unwrap().clone();
+            let forget_request = Request::Forget(sample_to_forget);
+
+            let forget_request_index = rng.gen_range(0, stress_test_data_with_forgets.len());
+            let request = stress_test_data_with_forgets.get_mut(forget_request_index).unwrap();
+            *request = forget_request;
+        });
+
+    let seed = rng.next_u64();
+
+    let mut trees = ExtremelyRandomizedTrees::fit(
+        &dataset,
+        samples,
+        seed,
+        num_trees,
+        min_leaf_size,
+        max_tries_per_split.clone()
+    );
+
+    let prediction_start = Instant::now();
+    for test_sample in &stress_test_data {
+        match test_sample {
+            Request::Predict(sample) => { trees.predict(sample); } ,
+            Request::Forget(sample) => trees.forget(sample),
+        }
+    }
+    let prediction_duration = prediction_start.elapsed();
+    let throughput =
+        ((stress_test_data.len() as f64 / prediction_duration.as_millis() as f64)
+            * 1000.0) as usize;
+
+    println!("{},predict_only,{},{}", name, prediction_duration.as_millis(), throughput);
+
+    let prediction_start = Instant::now();
+    for test_sample in &stress_test_data_with_forgets {
+        match test_sample {
+            Request::Predict(sample) => { trees.predict(sample); } ,
+            Request::Forget(sample) => trees.forget(sample),
+        }
+    }
+    let prediction_duration = prediction_start.elapsed();
+    let throughput =
+        ((stress_test_data_with_forgets.len() as f64 / prediction_duration.as_millis() as f64)
+            * 1000.0) as usize;
+
+    println!("{},forgets,{},{}", name, prediction_duration.as_millis(), throughput);
 }

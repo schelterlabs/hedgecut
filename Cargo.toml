@@ -37,6 +37,10 @@ name = "evaluate_train_time"
 path = "src/bin/evaluate_train_time.rs"
 
 [[bin]]
+name = "evaluate_stress_test"
+path = "src/bin/evaluate_stress_test.rs"
+
+[[bin]]
 name = "play"
 path = "src/bin/play.rs"
 
