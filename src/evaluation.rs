@@ -1,11 +1,14 @@
 use crate::dataset::{Sample, Dataset};
 use crate::tree::ExtremelyRandomizedTrees;
-use rand::{thread_rng, RngCore};
+use rand::{thread_rng, RngCore, Rng};
+use std::time::Instant;
 
 pub fn evaluate<S: Sample + Sync>(
     name: &str,
     trees: &ExtremelyRandomizedTrees,
-    test_data: &Vec<S>
+    test_data: &Vec<S>,
+    training_time_and_max_tries: Option<(u128, usize)>,
+
 ) {
     let mut t_p = 0;
     let mut _f_p = 0;
@@ -33,7 +36,14 @@ pub fn evaluate<S: Sample + Sync>(
     let accuracy = (t_p + t_n) as f64 / test_data.len() as f64;
     //println!("Accuracy {}", accuracy);
     //println!("[{}\t{}\n{}\t{}]", t_p, f_n, f_p, t_n);
-    println!("{},hedgecut,{}", name, accuracy);
+
+    match training_time_and_max_tries {
+        Some((duration, tries)) => {
+            println!("{},hedgecut,{},{},{}", name, accuracy, duration, tries)
+        },
+        None => println!("{},hedgecut,{}", name, accuracy),
+    }
+
 }
 
 pub fn end_to_end<D: Dataset + Sync, S: Sample + Sync>(
@@ -50,6 +60,7 @@ pub fn end_to_end<D: Dataset + Sync, S: Sample + Sync>(
     let mut rng = thread_rng();
     let seed = rng.next_u64();
 
+    let training_start = Instant::now();
     let trees = ExtremelyRandomizedTrees::fit(
         &dataset,
         samples,
@@ -59,21 +70,119 @@ pub fn end_to_end<D: Dataset + Sync, S: Sample + Sync>(
         max_tries_per_split
     );
 
-    //let training_duration = training_start.elapsed();
-    //println!("Fitted {} trees in {} ms", num_trees, training_duration.as_millis());
+    let training_duration = training_start.elapsed();
+    println!("Fitted {} trees in {} ms", num_trees, training_duration.as_millis());
 
-    evaluate(name, &trees, &test_data);
+    evaluate(name, &trees, &test_data, None);
 
-    //let removal1_start = Instant::now();
-    //trees.forget(&sample_to_forget);
-    //let removal1_duration = removal1_start.elapsed();
-    //println!("Removed sample in {} μs", removal1_duration.as_micros());
+}
 
-    //evaluate(&trees, &test_data);
+pub fn forget<D: Dataset + Sync, S: Sample + Sync>(
+    name: &str,
+    dataset: D,
+    samples: Vec<S>,
+    num_trees: usize,
+    min_leaf_size: usize,
+    max_tries_per_split: usize,
+) {
 
-    //let removal2_start = Instant::now();
-    //trees.forget(&another_sample_to_forget);
-    //let removal2_duration = removal2_start.elapsed();
-    //println!("Removed sample in {} μs", removal2_duration.as_micros());
-    //evaluate(&trees, &test_data);
+    let mut rng = thread_rng();
+    let seed = rng.next_u64();
+
+    let target_robustness = ((dataset.num_records() as f64) / 1000.0).round() as usize;
+
+    let samples_to_forget: Vec<S> = (0..target_robustness)
+        .map(|_| {
+            let index = rng.gen_range(0, dataset.num_records());
+            samples.get(index as usize).unwrap().clone()
+        })
+        .collect();
+
+    let mut trees = ExtremelyRandomizedTrees::fit(
+        &dataset,
+        samples,
+        seed,
+        num_trees,
+        min_leaf_size,
+        max_tries_per_split
+    );
+
+    // let training_duration = training_start.elapsed();
+    // println!("Fitted {} trees in {} ms", num_trees, training_duration.as_millis());
+
+    for sample in &samples_to_forget {
+        let removal_start = Instant::now();
+        trees.forget(sample);
+        let removal_duration = removal_start.elapsed();
+        println!("{},hedgecut,{}", name, removal_duration.as_micros());
+    }
+}
+
+pub fn max_tries<D: Dataset + Sync, S: Sample + Sync>(
+    name: &str,
+    dataset: D,
+    samples: Vec<S>,
+    test_data: Vec<S>,
+    num_trees: usize,
+    min_leaf_size: usize,
+    max_tries_per_split_candidates: Vec<usize>,
+) {
+
+    let mut rng = thread_rng();
+
+    for _ in 0..10 {
+        for max_tries_per_split in &max_tries_per_split_candidates {
+            let seed = rng.next_u64();
+
+            let training_samples = samples.clone();
+
+            let training_start = Instant::now();
+            let trees = ExtremelyRandomizedTrees::fit(
+                &dataset,
+                training_samples,
+                seed,
+                num_trees,
+                min_leaf_size,
+                max_tries_per_split.clone()
+            );
+            let training_duration = training_start.elapsed();
+            evaluate(
+                name,
+                &trees,
+                &test_data,
+                Some((training_duration.as_millis(), max_tries_per_split.clone()))
+            );
+        }
+    }
+
+}
+
+pub fn train_time<D: Dataset + Sync, S: Sample + Sync>(
+    name: &str,
+    dataset: D,
+    samples: Vec<S>,
+    num_trees: usize,
+    min_leaf_size: usize,
+    max_tries_per_split: usize,
+) {
+
+    let mut rng = thread_rng();
+
+    let seed = rng.next_u64();
+
+    let training_samples = samples.clone();
+
+    let training_start = Instant::now();
+    ExtremelyRandomizedTrees::fit(
+        &dataset,
+        training_samples,
+        seed,
+        num_trees,
+        min_leaf_size,
+        max_tries_per_split.clone()
+    );
+    let training_duration = training_start.elapsed();
+    println!("{},hedgecut,{}", name, training_duration.as_millis());
+
+
 }

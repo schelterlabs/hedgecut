@@ -252,7 +252,7 @@ impl Tree {
 
                 None => {
                     // We hit a non-robust node
-                    eprintln!("Hit a non-robust node!");
+                    //eprintln!("Hit a non-robust node!");
 
                     // First we have to update the split stats
                     let alternative_trees =

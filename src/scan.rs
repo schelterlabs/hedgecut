@@ -5,8 +5,6 @@ use crate::split_stats::SplitStats;
 use crate::tree::Split;
 
 // TODO write some unit tests using this
-// TODO Make dead code again
-// #[allow(dead_code)]
 pub fn scan<S: Sample>(
     samples: &[S],
     split: &Split,

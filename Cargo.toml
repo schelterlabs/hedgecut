@@ -25,6 +25,18 @@ name = "evaluate_on_givemesomecredit"
 path = "src/bin/evaluate_on_givemesomecredit.rs"
 
 [[bin]]
+name = "evaluate_forget"
+path = "src/bin/evaluate_forget.rs"
+
+[[bin]]
+name = "evaluate_max_tries"
+path = "src/bin/evaluate_max_tries.rs"
+
+[[bin]]
+name = "evaluate_train_time"
+path = "src/bin/evaluate_train_time.rs"
+
+[[bin]]
 name = "play"
 path = "src/bin/play.rs"
 

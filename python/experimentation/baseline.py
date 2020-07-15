@@ -5,6 +5,68 @@ from sklearn.metrics import accuracy_score, confusion_matrix
 from sklearn import tree, ensemble
 
 
+def train_time(name, train_samples, attribute_candidates, label_attribute):
+    X_train = train_samples[attribute_candidates].values
+    y_train = train_samples[label_attribute].values
+
+    t = time.process_time()
+    clf_sklearn = tree.DecisionTreeClassifier()
+    clf_sklearn.fit(X_train, y_train)
+    dt_train_time = time.process_time() - t
+
+    t = time.process_time()
+    clf_sklearn_rf = ensemble.RandomForestClassifier()
+    clf_sklearn_rf.fit(X_train, y_train)
+    rf_train_time = time.process_time() - t
+
+    t = time.process_time()
+    etd_sklearn = ensemble.ExtraTreesClassifier(n_estimators=100,
+                                                criterion='gini',
+                                                min_samples_leaf=2,
+                                                max_features='sqrt')
+    etd_sklearn.fit(X_train, y_train)
+    etd_train_time = time.process_time() - t
+
+    print(f'{name},decision_tree,{int(dt_train_time * 1000)}')
+    print(f'{name},random_forest,{int(rf_train_time * 1000)}')
+    print(f'{name},extremely_randomized_trees,{int(etd_train_time * 1000)}')
+
+
+def forget(name, train_samples, attribute_candidates, label_attribute):
+
+    train_samples = train_samples.sample(frac=1).reset_index(drop=True)
+
+    repetitions = int(len(train_samples) / 1000)
+
+    for _ in range(0, repetitions):
+        train_samples = train_samples.iloc[1:]
+
+        X_train = train_samples[attribute_candidates].values
+        y_train = train_samples[label_attribute].values
+
+        t = time.process_time()
+        clf_sklearn = tree.DecisionTreeClassifier()
+        clf_sklearn.fit(X_train, y_train)
+        dt_train_time = time.process_time() - t
+
+        t = time.process_time()
+        clf_sklearn_rf = ensemble.RandomForestClassifier()
+        clf_sklearn_rf.fit(X_train, y_train)
+        rf_train_time = time.process_time() - t
+
+        t = time.process_time()
+        etd_sklearn = ensemble.ExtraTreesClassifier(n_estimators=100,
+                                                    criterion='gini',
+                                                    min_samples_leaf=2,
+                                                    max_features='sqrt')
+        etd_sklearn.fit(X_train, y_train)
+        etd_train_time = time.process_time() - t
+
+        print(f'{name},decision_tree,{int(dt_train_time * 1000000)}')
+        print(f'{name},random_forest,{int(rf_train_time * 1000000)}')
+        print(f'{name},extremely_randomized_trees,{int(etd_train_time * 1000000)}')
+
+
 def run_evaluation(name, train_samples, test_samples, attribute_candidates, label_attribute):
     X_train = train_samples[attribute_candidates].values
     y_train = train_samples[label_attribute].values
