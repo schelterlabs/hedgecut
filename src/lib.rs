@@ -7,5 +7,5 @@ pub mod dataset;
 pub mod tree;
 pub mod evaluation;
 mod split_stats;
-mod scan;
+pub mod scan;
 mod utils;

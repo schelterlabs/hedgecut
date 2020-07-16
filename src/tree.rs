@@ -7,7 +7,7 @@ use std::marker::Sync;
 use std::borrow::Cow;
 use hashbrown::HashMap;
 
-use crate::scan::{scan, scan_simd};
+use crate::scan::{scan, scan_simd_numerical, scan_simd_categorical};
 use crate::utils::as_bytes;
 
 use crate::split_stats::{SplitStats, is_robust, gini_impurity};
@@ -345,7 +345,12 @@ impl Tree {
 
         let candidate_splits = self.generate_candidate_splits(dataset, &constant_attribute_indexes);
 
-        let split_stats = compute_split_stats(impurity_before, &samples, &candidate_splits);
+        let split_stats = compute_split_stats(
+            impurity_before,
+            &samples,
+            dataset,
+            &candidate_splits
+        );
 
         let maybe_best_split_stats = split_stats.iter().enumerate()
             .filter(|(_, stats)| stats.score != 0)
@@ -597,9 +602,10 @@ impl Tree {
     }
 }
 
-fn compute_split_stats<S: Sample>(
+fn compute_split_stats<S: Sample, D: Dataset>(
     impurity_before: f64,
     samples: &[S],
+    dataset: &D,
     candidate_splits: &Vec<Split>,
 ) -> Vec<SplitStats> {
 
@@ -609,11 +615,16 @@ fn compute_split_stats<S: Sample>(
 
         let mut stats = match candidate {
             Split::Numerical { attribute_index: _, cut_off: _ } => {
-                scan_simd(samples, candidate)
+                scan_simd_numerical(samples, candidate)
             },
-            Split::Categorical { attribute_index: _, subset: _ } => {
+            Split::Categorical { attribute_index, subset: _ } => {
                 // TODO we also need a SIMD version here
-                scan(samples, &candidate)
+                let (_, range) = dataset.attribute_range(*attribute_index);
+                if range <= 16 {
+                    scan_simd_categorical(samples, candidate)
+                } else {
+                    scan(samples, &candidate)
+                }
             },
         };
 

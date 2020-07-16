@@ -44,6 +44,14 @@ path = "src/bin/evaluate_stress_test.rs"
 name = "play"
 path = "src/bin/play.rs"
 
+[[bench]]
+name = "scan_numerical"
+harness = false
+
+[[bench]]
+name = "scan_categorical"
+harness = false
+
 [lib]
 path = "src/lib.rs"
 
@@ -52,6 +60,7 @@ csv = "1.1"
 rand = "0.6.5"
 rayon = "1.1"
 hashbrown = "0.8"
+bencher = "0.1.5"
 
 [profile.release]
 lto = "fat"

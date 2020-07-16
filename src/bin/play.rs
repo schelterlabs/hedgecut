@@ -1,273 +1,84 @@
-fn main() {}
-// extern crate hedgecut;
-//
-// use std::arch::x86_64::*;
-//
-// use hedgecut::dataset::{DefaultsDataset, Sample, DefaultsSample};
-//
-// fn main() {
-//
-//     let all_samples = DefaultsDataset::samples_from_csv("datasets/defaults-train.csv");
-//
-//     let samples = &all_samples[..23577];
-//
-//     let attribute_index: u8 = 1;
-//     let cut_off = 2;
-//
-//     split_counts(&samples, attribute_index, cut_off);
-//     split_counts_simd(&samples, attribute_index, cut_off);
-// }
-//
-// fn split_counts(
-//     samples: &[DefaultsSample],
-//     attribute_index: u8,
-//     cut_off: i8
-// ) {
-//     let mut num_plus: isize = 0;
-//     let mut num_left: isize = 0;
-//     let mut num_plus_left: isize = 0;
-//     let mut num_plus_right: isize = 0;
-//
-//     for sample in samples {
-//         let is_left = sample.is_left_of(attribute_index, cut_off as u8);
-//         let is_plus = sample.true_label();
-//
-//         if is_left {
-//             num_left += 1;
-//
-//             if is_plus {
-//                 num_plus_left += 1;
-//             }
-//         }
-//
-//         if is_plus {
-//             num_plus += 1;
-//             if !is_left {
-//                 num_plus_right += 1;
-//             }
-//         }
-//     }
-//
-//     println!(
-//         "NO-SIMD: plus {}, left {}, plus left {}, plus right {}",
-//         num_plus,
-//         num_left,
-//         num_plus_left,
-//         num_plus_right
-//     );
-// }
-//
-// fn split_counts_simd(
-//     samples: &[DefaultsSample],
-//     attribute_index: u8,
-//     cut_off: i8
-// ) {
-//     let mut offset = 0;
-//     let batch_size = 16;
-//
-//     let mut num_plus: isize = 0;
-//     let mut num_left: isize = 0;
-//     let mut num_plus_left: isize = 0;
-//     let mut num_plus_right: isize = 0;
-//
+extern crate hedgecut;
+
+use std::arch::x86_64::*;
+
+fn main() {
+
+    let possible_values = vec![0, 7, 29];
+
+    let mut subset: i32 = 0;
+    for bit_to_set in possible_values.iter() {
+        subset |= 1_i32 << *bit_to_set as i32
+    }
+
+    unsafe {
+
+        let subset_batch = _mm_set1_epi32(subset);
+        let no_match_batch = _mm_set1_epi32(0);
+
+
+         let mut result_buffer: Vec<i32> = Vec::with_capacity(4);
+         result_buffer.set_len(4);
+         let results_buffer_addr =
+             std::mem::transmute::<&mut i32, &mut __m128i>(&mut result_buffer[0]);
+
+        let values_batch = _mm_set_epi32(1, 4, 29, 30);
+        let indexes_batch = _mm_set1_epi32(1);
+
+        let positions = _mm_sllv_epi32(indexes_batch, values_batch);
+
+
+        let is_in = _mm_and_si128(positions, subset_batch);
+        let is_in_match = _mm_cmpeq_epi32(is_in, no_match_batch);
+
+        _mm_store_si128(results_buffer_addr, is_in_match);
+        for count in result_buffer.iter() {
+            println!("{:#034b}", count);
+        }
+
+    }
+    //println!("{:#066b}", subset);
+
 //     unsafe {
-//
-//         let cut_off_batch = _mm_set_epi8(
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//             cut_off,
-//         );
-//
-//         let mut left_accumulator =
-//             _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-//         let mut plus_accumulator =
-//             _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-//         let mut plus_left_accumulator =
-//             _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-//         let mut plus_right_accumulator =
-//             _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 //
 //         let mut result_buffer: Vec<i8> = Vec::with_capacity(16);
 //         result_buffer.set_len(16);
 //         let results_buffer_addr =
 //             std::mem::transmute::<&mut i8, &mut __m128i>(&mut result_buffer[0]);
 //
-//         let additional_samples = samples.len() % batch_size;
+//         let values = _mm_set_epi8(0, 0, 0, 0,  0,  0,  0,  0, 5, 5, 5, 5,  5,  5,  5,  5);
+//         let labels = _mm_set_epi8(0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1);
+// //        let labels = _mm_set_epi8(0, 0, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1, -1);
 //
-//         while offset < samples.len() - additional_samples {
+//         let shifted_labels = _mm_slli_epi16(labels, 7);
 //
-//             //println!("SIMD counting for offset {}", offset);
-//
-//             let attribute_values_batch = _mm_set_epi8(
-//                 samples.get_unchecked(offset + 0).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 1).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 2).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 3).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 4).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 5).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 6).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 7).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 8).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 9).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 10).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 11).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 12).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 13).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 14).attribute_value(attribute_index) as i8,
-//                 samples.get_unchecked(offset + 15).attribute_value(attribute_index) as i8,
-//             );
-//
-//             let is_plus_batch = _mm_set_epi8(
-//                 (samples.get_unchecked(offset + 0).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 1).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 2).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 3).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 4).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 5).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 6).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 7).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 8).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 9).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 10).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 11).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 12).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 13).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 14).true_label() as i8) * -1,
-//                 (samples.get_unchecked(offset + 15).true_label() as i8) * -1,
-//             );
-//
-//             plus_accumulator = _mm_sub_epi8(plus_accumulator, is_plus_batch);
-//
-//             // Subtraction needed, https://devblogs.microsoft.com/oldnewthing/20141201-00/?p=43503
-//             let is_left_batch = _mm_cmplt_epi8(attribute_values_batch, cut_off_batch);
-//             left_accumulator = _mm_sub_epi8(left_accumulator, is_left_batch);
-//
-//             let plus_left_batch = _mm_and_si128(is_left_batch, is_plus_batch);
-//             plus_left_accumulator = _mm_sub_epi8(plus_left_accumulator, plus_left_batch);
-//
-//             let plus_right_batch = _mm_andnot_si128(is_left_batch, is_plus_batch);
-//             plus_right_accumulator = _mm_sub_epi8(plus_right_accumulator, plus_right_batch);
-//
-//             offset += batch_size;
-//
-//             if offset % 127 == 0 { // i8.MAX_VALUE
-//                 _mm_store_si128(results_buffer_addr, plus_accumulator);
-//                 for count in result_buffer.iter() {
-//                     num_plus += *count as isize;
-//                 }
-//
-//                 _mm_store_si128(results_buffer_addr, left_accumulator);
-//                 for count in result_buffer.iter() {
-//                     num_left += *count as isize;
-//                 }
-//
-//                 _mm_store_si128(results_buffer_addr, plus_left_accumulator);
-//                 for count in result_buffer.iter() {
-//                     num_plus_left += *count as isize;
-//                 }
-//
-//                 _mm_store_si128(results_buffer_addr, plus_right_accumulator);
-//                 for count in result_buffer.iter() {
-//                     num_plus_right += *count as isize;
-//                 }
-//
-//                 left_accumulator =
-//                     _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-//                 plus_accumulator =
-//                     _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-//                 plus_left_accumulator =
-//                     _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-//                 plus_right_accumulator =
-//                     _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-//             }
+//         _mm_store_si128(results_buffer_addr, shifted_labels);
+//         for count in result_buffer.iter() {
+//             println!("{:#010b}", count);
 //         }
+//
+//         let cut_off = _mm_set1_epi8(5);
+//
+//         let is_left = _mm_cmplt_epi8(values, cut_off);
+//         let is_plus_left = _mm_and_si128(is_left, shifted_labels);
+//         let is_plus_right = _mm_andnot_si128(is_left, shifted_labels);
+//
+//         let is_left_result = _mm_movemask_epi8(is_left);
+//         let is_plus_left_result = _mm_movemask_epi8(is_plus_left);
+//         let is_plus_right_result = _mm_movemask_epi8(is_plus_right);
+//
+//         //println!("{:b}", 1_i8);
+//         //println!("{:b}", -1_i8);
 //
 //         println!(
-//             "[Offset {}] plus {}, left {}, plus left {}, plus right {}",
-//             offset,
-//             num_plus,
-//             num_left,
-//             num_plus_left,
-//             num_plus_right
+//             "num_left: {}, num_plus_left: {}, num_plus_right: {}",
+//             is_left_result.count_ones(),
+//             is_plus_left_result.count_ones(),
+//             is_plus_right_result.count_ones(),
 //         );
+//         //result.count_ones();
+// //        let result = _mm_popcnt_epi8(is_plus_left);
 //
-//
-//         // Collect remaining results in the accumulators
-//         if offset % 127 != 0 { // i8.MAX_VALUE
-//
-//             println!("Emptying accumulators");
-//
-//             _mm_store_si128(results_buffer_addr, plus_accumulator);
-//             for count in result_buffer.iter() {
-//                 num_plus += *count as isize;
-//             }
-//
-//             _mm_store_si128(results_buffer_addr, left_accumulator);
-//             for count in result_buffer.iter() {
-//                 num_left += *count as isize;
-//             }
-//
-//             _mm_store_si128(results_buffer_addr, plus_left_accumulator);
-//             for count in result_buffer.iter() {
-//                 num_plus_left += *count as isize;
-//             }
-//
-//             _mm_store_si128(results_buffer_addr, plus_right_accumulator);
-//             for count in result_buffer.iter() {
-//                 num_plus_right += *count as isize;
-//             }
-//         }
-//
-//         if offset < samples.len() {
-//
-//             println!("Processing last samples without SIMD");
-//
-//             // Process last samples without SIMD
-//             while offset < samples.len() {
-//
-//
-//                 let sample = samples.get_unchecked(offset);
-//                 let is_left = sample.is_left_of(attribute_index, cut_off as u8);
-//                 let is_plus = sample.true_label();
-//
-//                 if is_left {
-//                     num_left += 1;
-//
-//                     if is_plus {
-//                         num_plus_left += 1;
-//                     }
-//                 }
-//
-//                 if is_plus {
-//                     num_plus += 1;
-//                     if !is_left {
-//                         num_plus_right += 1;
-//                     }
-//                 }
-//
-//                 offset += 1;
-//             }
-//         }
-//
-//         println!(
-//             "plus {}, left {}, plus left {}, plus right {}",
-//             num_plus,
-//             num_left,
-//             num_plus_left,
-//             num_plus_right
-//         );
+// //        println!("{:b}", is_plus_right_result);
 //     }
-// }
+}
