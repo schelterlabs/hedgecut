@@ -41,6 +41,10 @@ name = "evaluate_stress_test"
 path = "src/bin/evaluate_stress_test.rs"
 
 [[bin]]
+name = "evaluate_accuracy_forget"
+path = "src/bin/evaluate_accuracy_forget.rs"
+
+[[bin]]
 name = "play"
 path = "src/bin/play.rs"
 

@@ -4,7 +4,7 @@ use crate::dataset::Sample;
 use crate::split_stats::SplitStats;
 use crate::tree::Split;
 
-pub fn scan<S: Sample>(
+pub fn scan_with_branches<S: Sample>(
     samples: &[S],
     split: &Split,
 ) -> SplitStats {
@@ -28,6 +28,30 @@ pub fn scan<S: Sample>(
                 num_plus_right += 1;
             }
         }
+    }
+
+    let num_minus_left = num_left - num_plus_left;
+    let num_minus_right: u32 =  ((samples.len() - num_left as usize) as u32) - num_plus_right;
+
+    SplitStats::new(num_plus_left, num_minus_left, num_plus_right, num_minus_right)
+}
+
+pub fn scan<S: Sample>(
+    samples: &[S],
+    split: &Split,
+) -> SplitStats {
+
+    let mut num_left: u32 = 0;
+    let mut num_plus_left: u32 = 0;
+    let mut num_plus_right: u32 = 0;
+
+    for sample in samples {
+        let is_left = sample.is_left_of(split);
+        let is_plus = sample.true_label();
+
+        num_left += is_left as u32;
+        num_plus_left += (is_left & is_plus) as u32;
+        num_plus_right += (!is_left & is_plus) as u32;
     }
 
     let num_minus_left = num_left - num_plus_left;
@@ -127,17 +151,9 @@ pub fn scan_simd_numerical<S: Sample>(
                 let is_left = sample.is_left_of(split);
                 let is_plus = sample.true_label();
 
-                if is_left {
-                    num_left += 1;
-
-                    if is_plus {
-                        num_plus_left += 1;
-                    }
-                } else {
-                    if is_plus {
-                        num_plus_right += 1;
-                    }
-                }
+                num_left += is_left as isize;
+                num_plus_left += (is_left & is_plus) as isize;
+                num_plus_right += (!is_left & is_plus) as isize;
 
                 offset += 1;
             }
@@ -163,7 +179,7 @@ pub fn scan_simd_categorical<S: Sample>(
 
     let (attribute_index, subset) = match split {
         Split::Numerical { attribute_index: _, cut_off: _ } => {
-            panic!("Don't call this method with a categorical split!");
+            panic!("Don't call this method with a numerical split!");
         }
         Split::Categorical { attribute_index, subset } => {
             (*attribute_index, *subset)
@@ -230,17 +246,9 @@ pub fn scan_simd_categorical<S: Sample>(
                 let is_left = sample.is_left_of(split);
                 let is_plus = sample.true_label();
 
-                if is_left {
-                    num_left += 1;
-
-                    if is_plus {
-                        num_plus_left += 1;
-                    }
-                } else {
-                    if is_plus {
-                        num_plus_right += 1;
-                    }
-                }
+                num_left += is_left as isize;
+                num_plus_left += (is_left & is_plus) as isize;
+                num_plus_right += (!is_left & is_plus) as isize;
 
                 offset += 1;
             }

@@ -78,6 +78,157 @@ pub fn end_to_end<D: Dataset + Sync, S: Sample + Sync>(
 
 }
 
+pub fn accuracy_forget<D: Dataset + Sync, S: Sample + Sync + Eq>(
+    name: &str,
+    dataset: D,
+    samples: Vec<S>,
+    test_data: Vec<S>,
+    num_trees: usize,
+    min_leaf_size: usize,
+    max_tries_per_split: usize,
+) {
+
+    let mut rng = thread_rng();
+    let seed = rng.next_u64();
+
+    let target_robustness = ((dataset.num_records() as f64) / 1000.0).round() as usize;
+
+    let samples_to_forget: Vec<S> = (0..target_robustness)
+        .map(|_| {
+            let index = rng.gen_range(0, dataset.num_records());
+            samples.get(index as usize).unwrap().clone()
+        })
+        .collect();
+
+    let samples_for_retraining: Vec<S> = samples.iter()
+        .filter_map(|s| {
+            if samples_to_forget.contains(&s) {
+                None
+            } else {
+                Some(s.clone())
+            }
+        })
+        .collect();
+
+    let mut trees = ExtremelyRandomizedTrees::fit(
+        &dataset,
+        samples,
+        seed,
+        num_trees,
+        min_leaf_size,
+        max_tries_per_split
+    );
+
+    let mut t_p = 0;
+    let mut f_p = 0;
+    let mut t_n = 0;
+    let mut f_n = 0;
+
+    for sample in test_data.iter() {
+        let predicted_label = trees.predict(sample);
+
+        if sample.true_label() {
+            if predicted_label {
+                t_p += 1;
+            } else {
+                f_n += 1;
+            }
+        } else {
+            if predicted_label {
+                f_p += 1;
+            } else {
+                t_n += 1;
+            }
+        }
+    }
+
+    let accuracy = (t_p + t_n) as f64 / test_data.len() as f64;
+
+    for sample in &samples_to_forget {
+        trees.forget(sample);
+    }
+
+    let mut t_p_forget = 0;
+    let mut f_p_forget = 0;
+    let mut t_n_forget = 0;
+    let mut f_n_forget = 0;
+
+    for sample in test_data.iter() {
+        let predicted_label = trees.predict(sample);
+
+        if sample.true_label() {
+            if predicted_label {
+                t_p_forget += 1;
+            } else {
+                f_n_forget += 1;
+            }
+        } else {
+            if predicted_label {
+                f_p_forget += 1;
+            } else {
+                t_n_forget += 1;
+            }
+        }
+    }
+
+    let accuracy_forget = (t_p_forget + t_n_forget) as f64 / test_data.len() as f64;
+
+    let retrained_trees = ExtremelyRandomizedTrees::fit(
+        &dataset,
+        samples_for_retraining,
+        seed,
+        num_trees,
+        min_leaf_size,
+        max_tries_per_split
+    );
+
+    let mut t_p_retrained = 0;
+    let mut f_p_retrained = 0;
+    let mut t_n_retrained = 0;
+    let mut f_n_retrained = 0;
+
+    for sample in test_data.iter() {
+        let predicted_label = retrained_trees.predict(sample);
+
+        if sample.true_label() {
+            if predicted_label {
+                t_p_retrained += 1;
+            } else {
+                f_n_retrained += 1;
+            }
+        } else {
+            if predicted_label {
+                f_p_retrained += 1;
+            } else {
+                t_n_retrained += 1;
+            }
+        }
+    }
+
+    let accuracy_retrained = (t_p_retrained + t_n_retrained) as f64 / test_data.len() as f64;
+
+    println!(
+        "{},hedgecut_forget,{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        name,
+        target_robustness,
+        accuracy,
+        t_p,
+        f_n,
+        f_p,
+        t_n,
+        accuracy_forget,
+        t_p_forget,
+        f_n_forget,
+        f_p_forget,
+        t_n_forget,
+        accuracy_retrained,
+        t_p_retrained,
+        f_n_retrained,
+        f_p_retrained,
+        t_n_retrained
+    );
+}
+
 pub fn forget<D: Dataset + Sync, S: Sample + Sync>(
     name: &str,
     dataset: D,

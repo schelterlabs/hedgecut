@@ -6,6 +6,6 @@ extern crate hashbrown;
 pub mod dataset;
 pub mod tree;
 pub mod evaluation;
-mod split_stats;
+pub mod split_stats;
 pub mod scan;
 mod utils;

@@ -1,84 +1,147 @@
 extern crate hedgecut;
 
-use std::arch::x86_64::*;
+use hedgecut::split_stats::{SplitStats};
+
+#[derive(Eq,PartialEq,Debug)]
+struct Step {
+    label: bool,
+    passes_first: bool,
+    passes_second: bool,
+}
+
+fn weaken_split_dbg(
+    current_champion_split_stats: &SplitStats,
+    current_runnerup_split_stats: &SplitStats,
+) -> Vec<(Step, SplitStats, SplitStats)> {
+    let truefalse = [true, false];
+
+    let mut enumerated = Vec::new();
+
+    for is_plus in truefalse.iter() {
+        for passes_first in truefalse.iter() {
+            for passes_second in truefalse.iter() {
+                let mut champion_stats = current_champion_split_stats.clone();
+                let mut runnerup_stats = current_runnerup_split_stats.clone();
+
+                if *is_plus && *passes_first && *passes_second {
+                    if champion_stats.num_plus_left != 0 && runnerup_stats.num_plus_left != 0 {
+                        champion_stats.num_plus_left -= 1;
+                        runnerup_stats.num_plus_left -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if *is_plus && !*passes_first && *passes_second {
+                    if champion_stats.num_plus_right != 0 && runnerup_stats.num_plus_left != 0 {
+                        champion_stats.num_plus_right -= 1;
+                        runnerup_stats.num_plus_left -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if *is_plus && *passes_first && !*passes_second {
+                    if champion_stats.num_plus_left != 0 && runnerup_stats.num_plus_right != 0 {
+                        champion_stats.num_plus_left -= 1;
+                        runnerup_stats.num_plus_right -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if *is_plus && !*passes_first && !*passes_second {
+                    if champion_stats.num_plus_right != 0 && runnerup_stats.num_plus_right != 0 {
+                        champion_stats.num_plus_right -= 1;
+                        runnerup_stats.num_plus_right -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if !*is_plus && *passes_first && *passes_second {
+                    if champion_stats.num_minus_left != 0 && runnerup_stats.num_minus_left != 0 {
+                        champion_stats.num_minus_left -= 1;
+                        runnerup_stats.num_minus_left -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if !*is_plus && !*passes_first && *passes_second {
+                    if champion_stats.num_minus_right != 0 && runnerup_stats.num_minus_left != 0 {
+                        champion_stats.num_minus_right -= 1;
+                        runnerup_stats.num_minus_left -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if !*is_plus && *passes_first && !*passes_second {
+                    if champion_stats.num_minus_left != 0 && runnerup_stats.num_minus_right != 0 {
+                        champion_stats.num_minus_left -= 1;
+                        runnerup_stats.num_minus_right -= 1;
+                    } else {
+                        continue;
+                    }
+                } else if !*is_plus && !*passes_first && !*passes_second {
+                    if champion_stats.num_minus_right != 0 && runnerup_stats.num_minus_right != 0 {
+                        champion_stats.num_minus_right -= 1;
+                        runnerup_stats.num_minus_right -= 1;
+                    } else {
+                        continue;
+                    }
+                }
+
+                champion_stats.update_score_and_impurity_before();
+                runnerup_stats.update_score_and_impurity_before();
+
+                let step = Step {
+                    label: *is_plus,
+                    passes_first: *passes_first,
+                    passes_second: *passes_second
+                };
+
+                enumerated.push((step, champion_stats, runnerup_stats));
+            }
+        }
+    }
+
+    enumerated
+}
 
 fn main() {
 
-    let possible_values = vec![0, 7, 29];
+//    let s = SplitStats::new(8, 5, 12, 1);
+//    let t = SplitStats::new(10, 3, 10, 3);
 
-    let mut subset: i32 = 0;
-    for bit_to_set in possible_values.iter() {
-        subset |= 1_i32 << *bit_to_set as i32
-    }
+    let s = SplitStats::new(8, 6, 12, 2);
+    let t = SplitStats::new(10, 3, 10, 3);
 
-    unsafe {
+    let mut diffs1 = Vec::new();
+    let mut diffs2 = Vec::new();
+    let mut diffs3 = Vec::new();
 
-        let subset_batch = _mm_set1_epi32(subset);
-        let no_match_batch = _mm_set1_epi32(0);
+    let enumerated = weaken_split_dbg(&s, &t);
 
+    for (_step, s_hat, t_hat) in enumerated {
+        let score_diff = s_hat.score - t_hat.score;
+        let enumerated_again = weaken_split_dbg(&s_hat, &t_hat);
 
-         let mut result_buffer: Vec<i32> = Vec::with_capacity(4);
-         result_buffer.set_len(4);
-         let results_buffer_addr =
-             std::mem::transmute::<&mut i32, &mut __m128i>(&mut result_buffer[0]);
+        diffs1.push(score_diff);
+        // let min = enumerated_again.iter()
+        //     .map(|(_step, s_hat, t_hat)| { s_hat.score - t_hat.score })
+        //     .min().unwrap();
+        //
+        // println!("{:?} -> {:?}", score_diff, min);
 
-        let values_batch = _mm_set_epi32(1, 4, 29, 30);
-        let indexes_batch = _mm_set1_epi32(1);
+        for (_step, s_hat, t_hat) in enumerated_again {
+            let score_diff_again = s_hat.score - t_hat.score;
 
-        let positions = _mm_sllv_epi32(indexes_batch, values_batch);
+            diffs2.push(score_diff_again);
 
+            let enumerated_again_again = weaken_split_dbg(&s_hat, &t_hat);
 
-        let is_in = _mm_and_si128(positions, subset_batch);
-        let is_in_match = _mm_cmpeq_epi32(is_in, no_match_batch);
+            for (_step, s_hat, t_hat) in enumerated_again_again {
+                let score_diff_again_again = s_hat.score - t_hat.score;
 
-        _mm_store_si128(results_buffer_addr, is_in_match);
-        for count in result_buffer.iter() {
-            println!("{:#034b}", count);
+                diffs3.push(score_diff_again_again);
+
+                println!("{},{},{}", score_diff, score_diff_again, score_diff_again_again);
+            }
         }
-
     }
-    //println!("{:#066b}", subset);
 
-//     unsafe {
-//
-//         let mut result_buffer: Vec<i8> = Vec::with_capacity(16);
-//         result_buffer.set_len(16);
-//         let results_buffer_addr =
-//             std::mem::transmute::<&mut i8, &mut __m128i>(&mut result_buffer[0]);
-//
-//         let values = _mm_set_epi8(0, 0, 0, 0,  0,  0,  0,  0, 5, 5, 5, 5,  5,  5,  5,  5);
-//         let labels = _mm_set_epi8(0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1);
-// //        let labels = _mm_set_epi8(0, 0, 0, 0, -1, -1, -1, -1, 0, 0, 0, 0, -1, -1, -1, -1);
-//
-//         let shifted_labels = _mm_slli_epi16(labels, 7);
-//
-//         _mm_store_si128(results_buffer_addr, shifted_labels);
-//         for count in result_buffer.iter() {
-//             println!("{:#010b}", count);
-//         }
-//
-//         let cut_off = _mm_set1_epi8(5);
-//
-//         let is_left = _mm_cmplt_epi8(values, cut_off);
-//         let is_plus_left = _mm_and_si128(is_left, shifted_labels);
-//         let is_plus_right = _mm_andnot_si128(is_left, shifted_labels);
-//
-//         let is_left_result = _mm_movemask_epi8(is_left);
-//         let is_plus_left_result = _mm_movemask_epi8(is_plus_left);
-//         let is_plus_right_result = _mm_movemask_epi8(is_plus_right);
-//
-//         //println!("{:b}", 1_i8);
-//         //println!("{:b}", -1_i8);
-//
-//         println!(
-//             "num_left: {}, num_plus_left: {}, num_plus_right: {}",
-//             is_left_result.count_ones(),
-//             is_plus_left_result.count_ones(),
-//             is_plus_right_result.count_ones(),
-//         );
-//         //result.count_ones();
-// //        let result = _mm_popcnt_epi8(is_plus_left);
-//
-// //        println!("{:b}", is_plus_right_result);
-//     }
+    println!("---------------------------------------------------------------------------");
+
+    println!("{},{},{}", diffs1.iter().min().unwrap(), diffs2.iter().min().unwrap(), diffs3.iter().min().unwrap());
+
 }

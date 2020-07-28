@@ -1,0 +1,129 @@
+extern crate hedgecut;
+
+use hedgecut::split_stats::{gini_impurity, gini_with_impurity_before};
+
+// fn gini_with_impurity_before(
+//     num_plus_left: u32,
+//     num_minus_left: u32,
+//     num_plus_right: u32,
+//     num_minus_right: u32,
+// ) -> (f64, f64, f64) {
+//
+//
+//     let num_plus = num_plus_left + num_plus_right;
+//     let num_minus = num_minus_left + num_minus_right;
+//     let num_samples = num_plus + num_minus;
+//
+//     let p_plus = num_plus as f64 / num_samples as f64;
+//
+//     let impurity_before = 1.0 - (p_plus * p_plus);
+//
+//     gini(
+//         impurity_before,
+//         num_plus_left,
+//         num_minus_left,
+//         num_plus_right,
+//         num_minus_right,
+//     )
+// }
+//
+// fn gini_impurity(num_plus: u32, num_samples: u32) -> f64 {
+//     let p_plus = num_plus as f64 / num_samples as f64;
+//     1.0 - (p_plus * p_plus)
+// }
+//
+// fn gini(
+//     impurity_before: f64,
+//     num_plus_left: u32,
+//     num_minus_left: u32,
+//     num_plus_right: u32,
+//     num_minus_right: u32
+// ) -> (f64, f64, f64) {
+//
+//     let num_samples_left = num_plus_left + num_minus_left;
+//     let num_samples_right = num_plus_right + num_minus_right;
+//
+//     if num_samples_left == 0 || num_samples_right == 0 {
+//         return (0.0, 0.0, 0.0);
+//     }
+//
+//     let gini_left = gini_impurity(num_plus_left, num_samples_left);
+//     let gini_right = gini_impurity(num_plus_right, num_samples_right);
+//
+//     let num_samples = num_samples_left + num_samples_right;
+//
+//     let score = impurity_before -
+//         (num_samples_left as f64 / num_samples as f64) * gini_left -
+//         (num_samples_right as f64 / num_samples as f64) * gini_right;
+//
+//     if score.is_nan() {
+//         println!("[{},{},{},{}]", num_plus_left, num_minus_left, num_plus_right, num_minus_right);
+//         println!("{}, {}, {}, {}", score, gini_left, gini_right, impurity_before);
+//         panic!("Invalid score encountered!");
+//     }
+//
+//     (score, gini_left, gini_right)
+// }
+//
+// fn gini_book(p1: f64, p2: f64) -> f64 {
+//     p1 * (1.0 - p1) + p2 * (1.0 - p2)
+// }
+//
+// fn gini_opt(p1: f64) -> f64 {
+//     2.0 * p1 * (1.0 - p1)
+// }
+
+fn gini_dbg(
+    num_plus_left: u32,
+    num_minus_left: u32,
+    num_plus_right: u32,
+    num_minus_right: u32
+) {
+
+    let num_samples_left = num_plus_left + num_minus_left;
+    let num_samples_right = num_plus_right + num_minus_right;
+
+    let num_plus = num_plus_left + num_plus_right;
+    let num_samples = num_samples_left + num_samples_right;
+
+    let gini_before = gini_impurity(num_plus, num_samples);
+    let gini_left = gini_impurity(num_plus_left, num_samples_left);
+    let gini_right = gini_impurity(num_plus_right, num_samples_right);
+
+    let weight_left = num_samples_left as f64 / num_samples as f64;
+    let weight_right = num_samples_right as f64 / num_samples as f64;
+
+
+    let score = gini_before - weight_left * gini_left - weight_right * gini_right;
+
+    //println!("{} = {} - {} * {} - {} * {}", score, gini_before, weight_left, gini_left,
+    //         weight_right, gini_right);
+
+    println!("{} = {} - {} - {} ", score, gini_before, weight_left * gini_left,
+             weight_right * gini_right);
+}
+
+fn main() {
+
+
+
+    // // TODO this should be a unit test
+    // println!("{} -- {} -- {}", gini_book(0.5, 0.5), gini_opt(0.5), gini_impurity(2, 4));
+    // println!("{} -- {} -- {}", gini_book(0.75, 0.25), gini_opt(0.75), gini_impurity(3, 4));
+    // println!("{} -- {} -- {}", gini_book(0.75, 0.25), gini_opt(0.25), gini_impurity(1, 4));
+    // println!("{} -- {} -- {}", gini_book(0.0, 1.0), gini_opt(0.0), gini_impurity(0, 4));
+    // println!("{} -- {} -- {}", gini_book(0.0, 1.0), gini_opt(1.0), gini_impurity(4, 4));
+
+//    gini_dbg(4, 0, 0, 4);
+
+
+    //3+ 2-
+    gini_dbg(1, 1, 2, 1);
+    gini_dbg(2, 2, 1, 0);
+    println!("-------------");
+    gini_dbg(0, 1, 2, 1);
+    gini_dbg(2, 2, 0, 0);
+
+
+
+}
