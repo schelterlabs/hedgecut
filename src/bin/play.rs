@@ -98,17 +98,16 @@ fn weaken_split_dbg(
     enumerated
 }
 
-fn main() {
+fn evaluate3(s: &mut SplitStats, t: &mut SplitStats) {
 
-//    let s = SplitStats::new(8, 5, 12, 1);
-//    let t = SplitStats::new(10, 3, 10, 3);
-
-    let s = SplitStats::new(8, 6, 12, 2);
-    let t = SplitStats::new(10, 3, 10, 3);
+    s.update_score_and_impurity_before();
+    t.update_score_and_impurity_before();
 
     let mut diffs1 = Vec::new();
     let mut diffs2 = Vec::new();
     let mut diffs3 = Vec::new();
+
+    let mut diff_paths = Vec::new();
 
     let enumerated = weaken_split_dbg(&s, &t);
 
@@ -117,11 +116,6 @@ fn main() {
         let enumerated_again = weaken_split_dbg(&s_hat, &t_hat);
 
         diffs1.push(score_diff);
-        // let min = enumerated_again.iter()
-        //     .map(|(_step, s_hat, t_hat)| { s_hat.score - t_hat.score })
-        //     .min().unwrap();
-        //
-        // println!("{:?} -> {:?}", score_diff, min);
 
         for (_step, s_hat, t_hat) in enumerated_again {
             let score_diff_again = s_hat.score - t_hat.score;
@@ -135,13 +129,49 @@ fn main() {
 
                 diffs3.push(score_diff_again_again);
 
-                println!("{},{},{}", score_diff, score_diff_again, score_diff_again_again);
+                //println!("{},{},{}", score_diff, score_diff_again, score_diff_again_again);
+                diff_paths.push((score_diff, score_diff_again, score_diff_again_again));
             }
         }
     }
 
-    println!("---------------------------------------------------------------------------");
+    //println!("---------------------------------------------------------------------------");
 
-    println!("{},{},{}", diffs1.iter().min().unwrap(), diffs2.iter().min().unwrap(), diffs3.iter().min().unwrap());
+    let mins_path = (
+        *diffs1.iter().min().unwrap(),
+        *diffs2.iter().min().unwrap(),
+        *diffs3.iter().min().unwrap()
+    );
 
+    let found = diff_paths.contains(&mins_path);
+
+    println!("{}: {:?}", found, mins_path);
+}
+
+fn main() {
+
+    evaluate3(
+        &mut SplitStats::new(8, 6, 12, 2),
+        &mut SplitStats::new(10, 3, 10, 3)
+    );
+
+    evaluate3(
+        &mut SplitStats::new(12, 2, 8, 6),
+        &mut SplitStats::new(10, 3, 10, 3)
+    );
+
+    evaluate3(
+        &mut SplitStats::new(7, 5, 13, 3),
+        &mut SplitStats::new(10, 3, 10, 3)
+    );
+
+    evaluate3(
+        &mut SplitStats::new(70, 50, 130, 30),
+        &mut SplitStats::new(100, 30, 100, 30)
+    );
+
+    evaluate3(
+        &mut SplitStats::new(2, 2, 1, 0),
+        &mut SplitStats::new(1, 1, 2, 1)
+    );
 }
