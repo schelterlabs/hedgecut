@@ -63,7 +63,7 @@ pub fn is_robust(
     threshold: usize
 ) -> (bool, usize) {
 
-    let mut weakened_stats = Some((current_champion_stats.clone(), current_runnerup_stats.clone()));
+    let mut weakened_stats = vec![(current_champion_stats.clone(), current_runnerup_stats.clone())];
     let mut num_removals = 0;
 
     let mut is_robust = true;
@@ -74,23 +74,39 @@ pub fn is_robust(
 
         // We could not find a way to decrease the split score difference with
         // the given number of removal operations
-        if weakened_stats.is_none() || num_removals > threshold {
+        if weakened_stats.is_empty() || num_removals > threshold {
             break;
         }
 
-        let the_stats = weakened_stats.unwrap();
+        for (stats_a, stats_b) in &weakened_stats {
+            // Runner up beats champion, split not robust
+            if (stats_a.score as f64 - stats_b.score as f64) < 0.0 {
+                is_robust = false;
+                break;
+            }
+        }
 
-        // Runner up beats champion, split not robust
-        if (the_stats.0.score as f64 - the_stats.1.score as f64) < 0.0 {
-            is_robust = false;
+        if num_removals == threshold {
             break;
         }
 
-        if num_removals > threshold {
-            break;
+        let mut next_weakened_stats = Vec::new();
+
+        for (stats_a, stats_b) in &weakened_stats {
+            next_weakened_stats.extend(weaken_split(stats_a, stats_b));
         }
 
-        weakened_stats = weaken_split(&the_stats.0, &the_stats.1);
+        let min_score_diff = next_weakened_stats.iter()
+            .map(|(stats_a, stats_b)| stats_a.score - stats_b.score)
+            .min();
+
+        weakened_stats = next_weakened_stats.into_iter()
+            .filter(|(stats_a, stats_b)| {
+                (stats_a.score - stats_b.score) == min_score_diff.unwrap()
+            })
+            .collect();
+
+        //eprintln!("{},{},{}", weakened_stats.len(), threshold, num_removals);
 
         num_removals += 1;
     };
@@ -101,12 +117,10 @@ pub fn is_robust(
 fn weaken_split(
     current_champion_split_stats: &SplitStats,
     current_runnerup_split_stats: &SplitStats,
-) -> Option<(SplitStats, SplitStats)> {
+) -> Vec<(SplitStats, SplitStats)> {
     let truefalse = [true, false];
 
-    let mut weakest_pair: Option<(SplitStats, SplitStats)> = None;
-
-    //let mut best_step: Option<(bool, bool, bool)> = None;
+    let mut weakest_pairs: Vec<(SplitStats, SplitStats)> = Vec::new();
 
     let mut score_diff_to_beat =
         current_champion_split_stats.score as f64 - current_runnerup_split_stats.score as f64;
@@ -180,18 +194,18 @@ fn weaken_split(
 
                 let new_score_diff = champion_stats.score as f64 - runnerup_stats.score as f64;
 
-                if new_score_diff < score_diff_to_beat {
+                if new_score_diff == score_diff_to_beat {
+                    weakest_pairs.push((champion_stats, runnerup_stats))
+                } else if new_score_diff < score_diff_to_beat {
                     score_diff_to_beat = new_score_diff;
-                    weakest_pair = Some((champion_stats, runnerup_stats));
-                    //best_step = Some((*is_plus, *passes_first, *passes_second));
+                    weakest_pairs.clear();
+                    weakest_pairs.push((champion_stats, runnerup_stats));
                 }
             }
         }
     }
 
-    //println!("\t{:?}", best_step);
-
-    weakest_pair
+    weakest_pairs
 }
 
 pub fn gini_with_impurity_before(

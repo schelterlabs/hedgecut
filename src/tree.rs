@@ -435,15 +435,15 @@ impl Tree {
                     })
                     .collect();
 
-                // eprintln!(
-                //     "Non-robust split ({}) on {} records with {} alternatives \
-                //     for element_id {} in tree {}.",
-                //     num_removals_required,
-                //     samples.len(),
-                //     alternative_splits.len(),
-                //     current_id,
-                //     self.index
-                // );
+                eprintln!(
+                    "Non-robust split ({}) on {} records with {} alternatives \
+                    for element_id {} in tree {}.",
+                    _num_removals_required,
+                    samples.len(),
+                    alternative_splits.len(),
+                    current_id,
+                    self.index
+                );
 
                 alternative_splits.push((index_of_best_stats, 0));
 
@@ -454,6 +454,7 @@ impl Tree {
 
                     let alternative_target_robustness =
                         target_robustness - num_removals_required_to_break_split;
+
 
                     let mut copy_of_samples = samples.to_vec();
 
