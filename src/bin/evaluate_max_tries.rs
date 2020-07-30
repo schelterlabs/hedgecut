@@ -11,7 +11,7 @@ fn main() {
     let samples = AdultDataset::samples_from_csv("datasets/adult-train.csv");
     let test_data = AdultDataset::samples_from_csv("datasets/adult-test.csv");
     let dataset = AdultDataset::from_samples(&samples);
-    let max_tries_per_split = vec![50, 100, 150, 200, 250];
+    let max_tries_per_split = vec![1, 3, 5, 10, 25, 50, 100, 150, 200, 250];
 
     max_tries(
         "adult",
@@ -27,7 +27,7 @@ fn main() {
     let samples = CardioDataset::samples_from_csv("datasets/cardio-train.csv");
     let test_data = CardioDataset::samples_from_csv("datasets/cardio-test.csv");
     let dataset = CardioDataset::from_samples(&samples);
-    let max_tries_per_split = vec![50, 100, 150, 200, 250];
+    let max_tries_per_split = vec![1, 3, 5, 10, 25, 50, 100, 150, 200, 250];
 
     max_tries(
         "cardio",
@@ -43,7 +43,7 @@ fn main() {
     let samples = GiveMeSomeCreditDataset::samples_from_csv("datasets/givemesomecredit-train.csv");
     let test_data = GiveMeSomeCreditDataset::samples_from_csv("datasets/givemesomecredit-test.csv");
     let dataset = GiveMeSomeCreditDataset::from_samples(&samples);
-    let max_tries_per_split = vec![50, 100, 150, 200, 250];
+    let max_tries_per_split = vec![1, 3, 5, 10, 25, 50, 100, 150, 200, 250];
 
     max_tries(
         "givemesomecredit",
@@ -59,7 +59,7 @@ fn main() {
     let samples = PropublicaDataset::samples_from_csv("datasets/propublica-train.csv");
     let test_data = PropublicaDataset::samples_from_csv("datasets/propublica-test.csv");
     let dataset = PropublicaDataset::from_samples(&samples);
-    let max_tries_per_split = vec![50, 100, 150, 200, 250];
+    let max_tries_per_split = vec![1, 3, 5, 10, 25, 50, 100, 150, 200, 250];
 
     max_tries(
         "propublica",
@@ -75,7 +75,7 @@ fn main() {
     let samples = ShoppingDataset::samples_from_csv("datasets/shopping-train.csv");
     let test_data = ShoppingDataset::samples_from_csv("datasets/shopping-test.csv");
     let dataset = ShoppingDataset::from_samples(&samples);
-    let max_tries_per_split = vec![50, 100, 150, 200, 250];
+    let max_tries_per_split = vec![1, 3, 5, 10, 25, 50, 100, 150, 200, 250];
 
     max_tries(
         "shopping",

@@ -98,7 +98,6 @@ pub fn is_robust(
             if stats_a.score - stats_b.score <= current_minimal_score_diff {
                 scratch_space.clear();
                 let score_diff_found = weaken_split(stats_a, stats_b, &mut scratch_space);
-                // TODO we should only do this if these are good candidates
                 candidates.extend(scratch_space.drain(..));
                 //println!("Candidates {}", candidates.len());
                 if score_diff_found <= current_minimal_score_diff {
@@ -132,7 +131,6 @@ fn weaken_split(
 ) -> i64 {
     let truefalse = [true, false];
 
-    // TODO handle case where both scores are zero
     let mut score_diff_to_beat =
         initial_champion.score as f64 - initial_runnerup.score as f64;
     //
@@ -300,11 +298,11 @@ fn gini(
         (num_samples_left as f64 / num_samples as f64) * gini_left -
         (num_samples_right as f64 / num_samples as f64) * gini_right;
 
-    if score.is_nan() {
-        println!("[{},{},{},{}]", num_plus_left, num_minus_left, num_plus_right, num_minus_right);
-        println!("{}, {}, {}, {}", score, gini_left, gini_right, impurity_before);
-        panic!("Invalid score encountered!");
-    }
+    // if score.is_nan() {
+    //     println!("[{},{},{},{}]", num_plus_left, num_minus_left, num_plus_right, num_minus_right);
+    //     println!("{}, {}, {}, {}", score, gini_left, gini_right, impurity_before);
+    //     panic!("Invalid score encountered!");
+    // }
 
     ((score * 1_000_000_000_000_f64) as i64, gini_left, gini_right)
 }

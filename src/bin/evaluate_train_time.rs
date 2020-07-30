@@ -10,7 +10,7 @@ fn main() {
 
     let samples = AdultDataset::samples_from_csv("datasets/adult-train.csv");
     let dataset = AdultDataset::from_samples(&samples);
-    let max_tries_per_split = 50;
+    let max_tries_per_split = 5;
 
     train_time(
         "adult",
@@ -24,7 +24,7 @@ fn main() {
 
     let samples = CardioDataset::samples_from_csv("datasets/cardio-train.csv");
     let dataset = CardioDataset::from_samples(&samples);
-    let max_tries_per_split = 50;
+    let max_tries_per_split = 5;
 
     train_time(
         "cardio",
@@ -38,7 +38,7 @@ fn main() {
 
     let samples = GiveMeSomeCreditDataset::samples_from_csv("datasets/givemesomecredit-train.csv");
     let dataset = GiveMeSomeCreditDataset::from_samples(&samples);
-    let max_tries_per_split = 50;
+    let max_tries_per_split = 5;
 
     train_time(
         "givemesomecredit",
@@ -51,7 +51,7 @@ fn main() {
 
     let samples = PropublicaDataset::samples_from_csv("datasets/propublica-train.csv");
     let dataset = PropublicaDataset::from_samples(&samples);
-    let max_tries_per_split = 50;
+    let max_tries_per_split = 5;
 
     train_time(
         "propublica",
@@ -64,7 +64,7 @@ fn main() {
 
     let samples = ShoppingDataset::samples_from_csv("datasets/shopping-train.csv");
     let dataset = ShoppingDataset::from_samples(&samples);
-    let max_tries_per_split = 250;
+    let max_tries_per_split = 50;
 
     train_time(
         "shopping",

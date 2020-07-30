@@ -282,7 +282,7 @@ pub fn max_tries<D: Dataset + Sync, S: Sample + Sync>(
 
     let mut rng = thread_rng();
 
-    for _ in 0..10 {
+    for _ in 0..6 {
         for max_tries_per_split in &max_tries_per_split_candidates {
             let seed = rng.next_u64();
 

@@ -12,7 +12,7 @@ fn main() {
     let seed: u64 = 4545;
     let num_trees = 100;
     let min_leaf_size = 2;
-    let max_tries_per_split = 25;
+    let max_tries_per_split = 5;
 
     end_to_end(
         "adult",
