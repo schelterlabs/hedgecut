@@ -1,5 +1,5 @@
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct SplitStats {
     pub num_plus_left: u32,
     pub num_minus_left: u32,
@@ -7,10 +7,14 @@ pub struct SplitStats {
     pub num_minus_right: u32,
     pub impurity_left: f64,
     pub impurity_right: f64,
-    pub score: i64,
+    pub score: Option<i64>,
 }
 
 impl SplitStats {
+
+    pub fn fmt(&self) -> String {
+        format!("({},{},{},{})", self.num_plus_left, self.num_minus_left, self.num_plus_right, self.num_minus_right)
+    }
 
     pub fn new(
         num_plus_left: u32,
@@ -25,7 +29,14 @@ impl SplitStats {
             num_minus_right,
             impurity_left: 0.0,
             impurity_right: 0.0,
-            score: 0
+            score: None
+        }
+    }
+
+    pub fn has_positive_score(&self) -> bool {
+        match self.score {
+            Some(the_score) => the_score > 0,
+            _ => false,
         }
     }
 
@@ -57,11 +68,55 @@ impl SplitStats {
     }
 }
 
+fn h2(s: &SplitStats, t: &SplitStats, r: u32) -> bool {
+    let threshold = r;
+
+    // We reject these to avoid false positives
+    if s.num_plus_left <= threshold || s.num_plus_right <= threshold ||
+        t.num_plus_left <= threshold || t.num_plus_right <= threshold ||
+        s.num_minus_left <= threshold || s.num_minus_right <= threshold ||
+        t.num_minus_left <= threshold || t.num_minus_right <= threshold {
+
+        false
+    } else {
+        true
+    }
+}
+
 pub fn is_robust(
     current_champion_stats: &SplitStats,
     current_runnerup_stats: &SplitStats,
     threshold: usize
 ) -> (bool, usize) {
+
+    assert!(current_champion_stats.has_positive_score());
+    assert!(current_runnerup_stats.has_positive_score());
+
+    if !h2(current_champion_stats, current_runnerup_stats, threshold as u32) {
+        return (false, threshold)
+    }
+
+    let (robust_via_heuristic, _) = heuristic(current_champion_stats, current_runnerup_stats, threshold as u32);
+
+    if !robust_via_heuristic {
+        return (false, threshold)
+    }
+
+    let (is_robust, num_removals,_) = is_robust2(current_champion_stats, current_runnerup_stats, threshold, false);
+
+
+    (is_robust, num_removals)
+}
+
+pub fn is_robust2(
+    current_champion_stats: &SplitStats,
+    current_runnerup_stats: &SplitStats,
+    threshold: usize,
+    _dbg: bool,
+) -> (bool, usize, i64) {
+
+    assert!(current_champion_stats.has_positive_score());
+    assert!(current_runnerup_stats.has_positive_score());
 
     let mut scratch_space = Vec::with_capacity(8);
 
@@ -69,7 +124,7 @@ pub fn is_robust(
 
     let mut frontier = vec![(current_champion_stats.clone(), current_runnerup_stats.clone())];
     let mut current_minimal_score_diff =
-        current_champion_stats.score - current_runnerup_stats.score;
+        current_champion_stats.score.unwrap() - current_runnerup_stats.score.unwrap();
 
     let mut num_removals = 0;
     let mut is_robust = true;
@@ -95,7 +150,7 @@ pub fn is_robust(
 
         for (stats_a, stats_b) in &frontier {
             //println!("\tComparison {} vs {}", (stats_a.score - stats_b.score), current_minimal_score_diff);
-            if stats_a.score - stats_b.score <= current_minimal_score_diff {
+            if stats_a.score.unwrap() - stats_b.score.unwrap() <= current_minimal_score_diff {
                 scratch_space.clear();
                 let score_diff_found = weaken_split(stats_a, stats_b, &mut scratch_space);
                 candidates.extend(scratch_space.drain(..));
@@ -105,8 +160,14 @@ pub fn is_robust(
                 }
             }
         }
-        //println!("Candidates2 {}", candidates.len());
 
+        // if dbg {
+        //     println!("GREEDY [{}]", num_removals + 1);
+        //     for (s,t) in &candidates {
+        //         println!("{} {} {}", s.fmt(), t.fmt(), (s.score - t.score) as f64 / 1_000_000_000_000_f64);
+        //     }
+        //     println!("----");
+        // }
         // No improvements possible
         if candidates.is_empty() {
             //println!("No improvements possible");
@@ -121,7 +182,7 @@ pub fn is_robust(
         num_removals += 1;
     };
 
-    (is_robust, num_removals)
+    (is_robust, num_removals, current_minimal_score_diff)
 }
 
 fn weaken_split(
@@ -132,7 +193,7 @@ fn weaken_split(
     let truefalse = [true, false];
 
     let mut score_diff_to_beat =
-        initial_champion.score as f64 - initial_runnerup.score as f64;
+        initial_champion.score.unwrap() as f64 - initial_runnerup.score.unwrap() as f64;
     //
     // println!("Weaken ({},{},{},{}) vs ({},{},{},{}) with {}",
     //          initial_champion.num_plus_left,
@@ -151,7 +212,8 @@ fn weaken_split(
        (initial_runnerup.num_plus_left == 0 && initial_runnerup.num_minus_right == 0) ||
        (initial_runnerup.num_minus_left == 0 && initial_runnerup.num_plus_right == 0) ||
        (initial_runnerup.num_plus_left == 0 && initial_runnerup.num_plus_right == 0) ||
-        initial_runnerup.score < 0 {
+        initial_runnerup.score.is_none() {
+
         return (score_diff_to_beat * 1_000_000_000_000_f64) as i64
     }
 
@@ -223,7 +285,7 @@ fn weaken_split(
                 champion.update_score_and_impurity_before();
                 runnerup.update_score_and_impurity_before();
 
-                let new_score_diff = champion.score as f64 - runnerup.score as f64;
+                let new_score_diff = champion.score.unwrap() as f64 - runnerup.score.unwrap() as f64;
 
                 //println!("{} vs {}", score_diff_to_beat, new_score_diff);
 
@@ -248,7 +310,7 @@ pub fn gini_with_impurity_before(
     num_minus_left: u32,
     num_plus_right: u32,
     num_minus_right: u32,
-) -> (i64, f64, f64) {
+) -> (Option<i64>, f64, f64) {
 
 
     let num_plus = num_plus_left + num_plus_right;
@@ -280,13 +342,15 @@ fn gini(
     num_minus_left: u32,
     num_plus_right: u32,
     num_minus_right: u32
-) -> (i64, f64, f64) {
+) -> (Option<i64>, f64, f64) {
 
     let num_samples_left = num_plus_left + num_minus_left;
     let num_samples_right = num_plus_right + num_minus_right;
 
+    // We don't want such splits
     if num_samples_left == 0 || num_samples_right == 0 {
-        return (-1, 0.0, 0.0);
+        return (None, 0.0, 0.0);
+        //return (0, 0.0, 0.0);
     }
 
     let gini_left = gini_impurity(num_plus_left, num_samples_left);
@@ -304,208 +368,144 @@ fn gini(
     //     panic!("Invalid score encountered!");
     // }
 
-    ((score * 1_000_000_000_000_f64) as i64, gini_left, gini_right)
+    (Some((score * 1_000_000_000_000_f64) as i64), gini_left, gini_right)
+}
+
+pub fn fmt_score(s: i64) -> f64 {
+    s as f64 / 1_000_000_000_000_f64
 }
 
 
-#[cfg(test)]
-mod tests {
 
-    use crate::split_stats::{SplitStats, is_robust};
+pub fn heuristic(s: &SplitStats, t: &SplitStats, r: u32) -> (bool, Option<(SplitStats, SplitStats)>) {
 
-    fn evaluate3(s: &mut SplitStats, t: &mut SplitStats) {
+    if s.num_plus_left >= r && t.num_plus_right >= r {
+        let mut s_plus_a = s.clone();
+        let mut t_plus_a = t.clone();
 
-        s.update_score_and_impurity_before();
-        t.update_score_and_impurity_before();
+        s_plus_a.num_plus_left -= r;
+        t_plus_a.num_plus_right -= r;
 
-        let mut diffs1 = Vec::new();
-        let mut diffs2 = Vec::new();
-        let mut diffs3 = Vec::new();
+        s_plus_a.update_score_and_impurity_before();
+        t_plus_a.update_score_and_impurity_before();
 
-        let mut diff_paths = Vec::new();
-
-        let enumerated = weaken_split_dbg(&s, &t);
-
-        for (_step, s_hat, t_hat) in enumerated {
-            let score_diff = s_hat.score - t_hat.score;
-            let enumerated_again = weaken_split_dbg(&s_hat, &t_hat);
-
-            diffs1.push(score_diff);
-
-            for (_step, s_hat, t_hat) in enumerated_again {
-                let score_diff_again = s_hat.score - t_hat.score;
-
-                diffs2.push(score_diff_again);
-
-                let enumerated_again_again = weaken_split_dbg(&s_hat, &t_hat);
-
-                for (_step, s_hat, t_hat) in enumerated_again_again {
-                    let score_diff_again_again = s_hat.score - t_hat.score;
-
-                    diffs3.push(score_diff_again_again);
-
-                    diff_paths.push((score_diff, score_diff_again, score_diff_again_again));
-                }
-            }
+        if t_plus_a.score > s_plus_a.score {
+            return (false, Some((s_plus_a, t_plus_a)));
         }
-
-        let mins_path = (
-            *diffs1.iter().min().unwrap(),
-            *diffs2.iter().min().unwrap(),
-            *diffs3.iter().min().unwrap()
-        );
-
-        println!("{:?}", mins_path);
     }
+    // ---
 
-    #[derive(Eq,PartialEq,Debug)]
-    struct Step {
-        label: bool,
-        passes_first: bool,
-        passes_second: bool,
-    }
+    if s.num_plus_right >= r && t.num_plus_left >= r {
+        let mut s_plus_b = s.clone();
+        let mut t_plus_b = t.clone();
 
-    fn weaken_split_dbg(
-        current_champion_split_stats: &SplitStats,
-        current_runnerup_split_stats: &SplitStats,
-    ) -> Vec<(Step, SplitStats, SplitStats)> {
-        let truefalse = [true, false];
+        s_plus_b.num_plus_right -= r;
+        t_plus_b.num_plus_left -= r;
 
-        let mut enumerated = Vec::new();
+        s_plus_b.update_score_and_impurity_before();
+        t_plus_b.update_score_and_impurity_before();
 
-        for is_plus in truefalse.iter() {
-            for passes_first in truefalse.iter() {
-                for passes_second in truefalse.iter() {
-                    let mut champion_stats = current_champion_split_stats.clone();
-                    let mut runnerup_stats = current_runnerup_split_stats.clone();
-
-                    if *is_plus && *passes_first && *passes_second {
-                        if champion_stats.num_plus_left != 0 && runnerup_stats.num_plus_left != 0 {
-                            champion_stats.num_plus_left -= 1;
-                            runnerup_stats.num_plus_left -= 1;
-                        } else {
-                            continue;
-                        }
-                    } else if *is_plus && !*passes_first && *passes_second {
-                        if champion_stats.num_plus_right != 0 && runnerup_stats.num_plus_left != 0 {
-                            champion_stats.num_plus_right -= 1;
-                            runnerup_stats.num_plus_left -= 1;
-                        } else {
-                            continue;
-                        }
-                    } else if *is_plus && *passes_first && !*passes_second {
-                        if champion_stats.num_plus_left != 0 && runnerup_stats.num_plus_right != 0 {
-                            champion_stats.num_plus_left -= 1;
-                            runnerup_stats.num_plus_right -= 1;
-                        } else {
-                            continue;
-                        }
-                    } else if *is_plus && !*passes_first && !*passes_second {
-                        if champion_stats.num_plus_right != 0 && runnerup_stats.num_plus_right != 0 {
-                            champion_stats.num_plus_right -= 1;
-                            runnerup_stats.num_plus_right -= 1;
-                        } else {
-                            continue;
-                        }
-                    } else if !*is_plus && *passes_first && *passes_second {
-                        if champion_stats.num_minus_left != 0 && runnerup_stats.num_minus_left != 0 {
-                            champion_stats.num_minus_left -= 1;
-                            runnerup_stats.num_minus_left -= 1;
-                        } else {
-                            continue;
-                        }
-                    } else if !*is_plus && !*passes_first && *passes_second {
-                        if champion_stats.num_minus_right != 0 && runnerup_stats.num_minus_left != 0 {
-                            champion_stats.num_minus_right -= 1;
-                            runnerup_stats.num_minus_left -= 1;
-                        } else {
-                            continue;
-                        }
-                    } else if !*is_plus && *passes_first && !*passes_second {
-                        if champion_stats.num_minus_left != 0 && runnerup_stats.num_minus_right != 0 {
-                            champion_stats.num_minus_left -= 1;
-                            runnerup_stats.num_minus_right -= 1;
-                        } else {
-                            continue;
-                        }
-                    } else if !*is_plus && !*passes_first && !*passes_second {
-                        if champion_stats.num_minus_right != 0 && runnerup_stats.num_minus_right != 0 {
-                            champion_stats.num_minus_right -= 1;
-                            runnerup_stats.num_minus_right -= 1;
-                        } else {
-                            continue;
-                        }
-                    }
-
-                    champion_stats.update_score_and_impurity_before();
-                    runnerup_stats.update_score_and_impurity_before();
-
-                    let step = Step {
-                        label: *is_plus,
-                        passes_first: *passes_first,
-                        passes_second: *passes_second
-                    };
-
-                    enumerated.push((step, champion_stats, runnerup_stats));
-                }
-            }
+        if t_plus_b.score > s_plus_b.score {
+            return (false, Some((s_plus_b, t_plus_b)));
         }
+    }
+    // ---
 
-        enumerated
+    if s.num_plus_left >= r && t.num_plus_left >= r {
+        let mut s_plus_c = s.clone();
+        let mut t_plus_c = t.clone();
+
+        s_plus_c.num_plus_left -= r;
+        t_plus_c.num_plus_left -= r;
+
+        s_plus_c.update_score_and_impurity_before();
+        t_plus_c.update_score_and_impurity_before();
+
+        if t_plus_c.score > s_plus_c.score {
+            return (false, Some((s_plus_c, t_plus_c)));
+        }
+    }
+    // ---
+
+    if s.num_plus_right >= r && t.num_plus_right >= r {
+        let mut s_plus_d = s.clone();
+        let mut t_plus_d = t.clone();
+
+        s_plus_d.num_plus_right -= r;
+        t_plus_d.num_plus_right -= r;
+
+        s_plus_d.update_score_and_impurity_before();
+        t_plus_d.update_score_and_impurity_before();
+
+        if t_plus_d.score > s_plus_d.score {
+            return (false, Some((s_plus_d, t_plus_d)));
+        }
+    }
+    // ---
+
+    if s.num_minus_left >= r && t.num_minus_right >= r {
+        let mut s_minus_a = s.clone();
+        let mut t_minus_a = t.clone();
+
+        s_minus_a.num_minus_left -= r;
+        t_minus_a.num_minus_right -= r;
+
+        s_minus_a.update_score_and_impurity_before();
+        t_minus_a.update_score_and_impurity_before();
+
+        if t_minus_a.score > s_minus_a.score {
+            return (false, Some((s_minus_a, t_minus_a)));
+        }
+    }
+    // ---
+
+    if s.num_minus_right >= r && t.num_minus_left >= r {
+        let mut s_minus_b = s.clone();
+        let mut t_minus_b = t.clone();
+
+        s_minus_b.num_minus_right -= r;
+        t_minus_b.num_minus_left -= r;
+
+        s_minus_b.update_score_and_impurity_before();
+        t_minus_b.update_score_and_impurity_before();
+
+        if t_minus_b.score > s_minus_b.score {
+            return (false, Some((s_minus_b, t_minus_b)));
+        }
+    }
+    // ---
+
+    if s.num_minus_left >= r && t.num_minus_left >= r {
+        let mut s_minus_c = s.clone();
+        let mut t_minus_c = t.clone();
+
+        s_minus_c.num_minus_left -= r;
+        t_minus_c.num_minus_left -= r;
+
+        s_minus_c.update_score_and_impurity_before();
+        t_minus_c.update_score_and_impurity_before();
+
+        if t_minus_c.score > s_minus_c.score {
+            return (false, Some((s_minus_c, t_minus_c)));
+        }
     }
 
-    #[test]
-    fn examples() {
+    // ---
 
-        let mut s = SplitStats::new(8, 6, 12, 2);
-        let mut t = SplitStats::new(10, 3, 10, 3);
+    if s.num_minus_right >= r && t.num_minus_right >= r {
+        let mut s_minus_d = s.clone();
+        let mut t_minus_d = t.clone();
 
-        s.update_score_and_impurity_before();
-        t.update_score_and_impurity_before();
+        s_minus_d.num_minus_right -= r;
+        t_minus_d.num_minus_right -= r;
 
-        let (split_robust, num_steps) = is_robust(&s, &t, 3);
+        s_minus_d.update_score_and_impurity_before();
+        t_minus_d.update_score_and_impurity_before();
 
-        assert!(!split_robust);
-        assert_eq!(num_steps, 3);
-        evaluate3(&mut s, &mut t);
-
-
-        let mut s = SplitStats::new(7, 5, 13, 3);
-        let mut t = SplitStats::new(10, 3, 10, 3);
-
-        s.update_score_and_impurity_before();
-        t.update_score_and_impurity_before();
-
-        let (split_robust, num_steps) = is_robust(&s, &t, 3);
-
-        assert!(!split_robust);
-        assert_eq!(num_steps, 2);
-        evaluate3(&mut s, &mut t);
-
-
-        let mut s = SplitStats::new(70, 50, 130, 30);
-        let mut t = SplitStats::new(10, 3, 10, 3);
-
-        s.update_score_and_impurity_before();
-        t.update_score_and_impurity_before();
-
-        let (split_robust, num_steps) = is_robust(&s, &t, 3);
-
-        assert!(!split_robust);
-        assert_eq!(num_steps, 3);
-        evaluate3(&mut s, &mut t);
-
-
-        let mut s = SplitStats::new(2, 2, 1, 0);
-        let mut t = SplitStats::new(1, 1, 2, 1);
-
-        s.update_score_and_impurity_before();
-        t.update_score_and_impurity_before();
-
-        let (split_robust, num_steps) = is_robust(&s, &t, 3);
-
-        assert!(!split_robust);
-        assert_eq!(num_steps, 1);
-        evaluate3(&mut s, &mut t);
+        if t_minus_d.score > s_minus_d.score {
+            return (false, Some((s_minus_d, t_minus_d)));
+        }
     }
+
+    return (true, None);
 }

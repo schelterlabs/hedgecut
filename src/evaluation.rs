@@ -228,6 +228,55 @@ pub fn accuracy_forget<D: Dataset + Sync, S: Sample + Sync + Eq>(
         t_n_retrained
     );
 }
+pub fn forget2<D: Dataset + Sync, S: Sample + Sync>(
+    name: &str,
+    dataset: D,
+    samples: Vec<S>,
+    num_trees: usize,
+    min_leaf_size: usize,
+    max_tries_per_split: usize,
+) {
+
+    let mut rng = thread_rng();
+    let seed = rng.next_u64();
+
+    let target_robustness = ((dataset.num_records() as f64) / 1000.0).round() as usize;
+
+    let samples_to_forget: Vec<S> = (0..target_robustness)
+        .map(|_| {
+            let index = rng.gen_range(0, dataset.num_records());
+            samples.get(index as usize).unwrap().clone()
+        })
+        .collect();
+
+    let mut ert = ExtremelyRandomizedTrees::fit(
+        &dataset,
+        samples,
+        seed,
+        num_trees,
+        min_leaf_size,
+        max_tries_per_split
+    );
+
+    // let training_duration = training_start.elapsed();
+    // println!("Fitted {} trees in {} ms", num_trees, training_duration.as_millis());
+    use crate::tree::Tree;
+
+    let mut total_hit = 0;
+    let mut total_changed = 0;
+
+    for sample in &samples_to_forget {
+        ert.trees.iter_mut().for_each(|tree| {
+            let (hit, changed) = Tree::forget_from2(tree, sample, 1);
+            total_hit += hit;
+            total_changed += changed;
+        });
+
+        //println!("{},hedgecut,{}", name, removal_duration.as_micros());
+    }
+
+    println!("{},{},{},{}", name, min_leaf_size, total_hit, total_changed);
+}
 
 pub fn forget<D: Dataset + Sync, S: Sample + Sync>(
     name: &str,
@@ -335,6 +384,150 @@ pub fn train_time<D: Dataset + Sync, S: Sample + Sync>(
     );
     let training_duration = training_start.elapsed();
     println!("{},hedgecut,{}", name, training_duration.as_millis());
+}
+
+pub fn robustness<D: Dataset + Sync, S: Sample + Sync>(
+    name: &str,
+    dataset: D,
+    samples: Vec<S>,
+    num_trees: usize,
+    min_leaf_size: usize,
+    max_tries_per_split: usize,
+) {
+
+    let mut rng = thread_rng();
+
+    let seed = rng.next_u64();
+
+    for epsilon_factor in &[10000, 5000, 1000, 500, 100, 50] {
+        let training_samples = samples.clone();
+        let epsilon = 1.0 / *epsilon_factor as f64;
+
+        let training_start = Instant::now();
+        ExtremelyRandomizedTrees::fit_with_epsilon(
+            &dataset,
+            training_samples,
+            seed,
+            num_trees,
+            min_leaf_size,
+            max_tries_per_split.clone(),
+            epsilon
+        );
+        let training_duration = training_start.elapsed();
+        println!("{},hedgecut,{},{}", name, epsilon_factor, training_duration.as_millis());
+    }
+}
+
+pub fn robustness2<D: Dataset + Sync, S: Sample + Sync>(
+    name: &str,
+    dataset: D,
+    samples: Vec<S>,
+    num_trees: usize,
+    min_leaf_size: usize,
+    max_tries_per_split: usize,
+) {
+
+    let mut rng = thread_rng();
+
+    let seed = rng.next_u64();
+
+    for epsilon_factor in &[10000, 5000, 1000, 500, 100, 50] {
+        let training_samples = samples.clone();
+        let epsilon = 1.0 / *epsilon_factor as f64;
+
+        let ert = ExtremelyRandomizedTrees::fit_with_epsilon(
+            &dataset,
+            training_samples,
+            seed,
+            num_trees,
+            min_leaf_size,
+            max_tries_per_split.clone(),
+            epsilon
+        );
+
+        let mut num_robust = 0;
+        let mut num_non_robust = 0;
+
+        for tree in ert.trees {
+            let (tree_num_robust, tree_num_non_robust) = node_count(tree);
+            num_robust += tree_num_robust;
+            num_non_robust += tree_num_non_robust;
+        }
+        let ratio = num_non_robust as f64 / (num_non_robust + num_robust) as f64;
+
+        println!("{},hedgecut,{},{},{},{}", name, epsilon_factor, ratio, num_robust, num_non_robust);
+    }
+}
+
+pub fn node_count(tree: crate::tree::Tree) -> (usize, usize) {
+
+    let mut num_robust = 0;
+    let mut num_non_robust = 0;
+
+    num_robust += tree.num_robust_nodes;
+    num_non_robust += tree.num_non_robust_nodes;
+
+    for (_, subtrees) in tree.alternative_subtrees {
+        for subtree in subtrees {
+            let (subtree_num_robust, subtree_num_non_robust) = node_count(subtree.tree);
+            num_robust += subtree_num_robust;
+            num_non_robust += subtree_num_non_robust;
+        }
+    }
+
+    (num_robust, num_non_robust)
+}
+
+pub fn robustness_accuracy<D: Dataset + Sync, S: Sample + Sync>(
+    name: &str,
+    dataset: D,
+    samples: Vec<S>,
+    test_data: Vec<S>,
+    num_trees: usize,
+    min_leaf_size: usize,
+    max_tries_per_split: usize,
+) {
+
+    let mut rng = thread_rng();
+
+    let seed = rng.next_u64();
+
+    for epsilon_factor in &[10000, 5000, 1000, 500, 100, 50] {
+        let training_samples = samples.clone();
+        let epsilon = 1.0 / *epsilon_factor as f64;
+
+        let trees = ExtremelyRandomizedTrees::fit_with_epsilon(
+            &dataset,
+            training_samples,
+            seed,
+            num_trees,
+            min_leaf_size,
+            max_tries_per_split.clone(),
+            epsilon
+        );
+
+        let mut t_p = 0;
+        let mut t_n = 0;
+
+        for sample in test_data.iter() {
+            let predicted_label = trees.predict(sample);
+
+            if sample.true_label() {
+                if predicted_label {
+                    t_p += 1;
+                }
+            } else {
+                if !predicted_label {
+                    t_n += 1;
+                }
+            }
+        }
+
+        let accuracy = (t_p + t_n) as f64 / test_data.len() as f64;
+        println!("{},{},{}", name, epsilon_factor, accuracy);
+    }
+
+
 }
 
 #[derive(Clone)]

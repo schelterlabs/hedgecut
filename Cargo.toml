@@ -45,8 +45,24 @@ name = "evaluate_accuracy_forget"
 path = "src/bin/evaluate_accuracy_forget.rs"
 
 [[bin]]
-name = "play"
-path = "src/bin/play.rs"
+name = "evaluate_forget_leafs"
+path = "src/bin/evaluate_forget_leafs.rs"
+
+[[bin]]
+name = "evaluate_robustness"
+path = "src/bin/evaluate_robustness.rs"
+
+[[bin]]
+name = "evaluate_robustness_with_variants"
+path = "src/bin/evaluate_robustness_with_variants.rs"
+
+[[bin]]
+name = "evaluate_robustness_accuracy"
+path = "src/bin/evaluate_robustness_accuracy.rs"
+
+[[bin]]
+name = "evaluate_search"
+path = "src/bin/evaluate_search.rs"
 
 [[bench]]
 name = "scan_numerical"

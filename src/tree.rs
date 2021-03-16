@@ -39,7 +39,7 @@ impl Split {
 }
 
 pub struct ExtremelyRandomizedTrees {
-    trees: Vec<Tree>,
+    pub trees: Vec<Tree>,
 }
 
 impl ExtremelyRandomizedTrees {
@@ -55,10 +55,35 @@ impl ExtremelyRandomizedTrees {
         where D: Dataset + Sync, S: Sample + Sync
     {
 
+        let epsilon = 1.0 / 1000.0;
+
+        ExtremelyRandomizedTrees::fit_with_epsilon(
+            dataset,
+            samples,
+            seed,
+            num_trees,
+            min_leaf_size,
+            max_tries_per_split,
+            epsilon
+        )
+    }
+
+    pub fn fit_with_epsilon<D, S>(
+        dataset: &D,
+        samples: Vec<S>,
+        seed: u64,
+        num_trees: usize,
+        min_leaf_size: usize,
+        max_tries_per_split: usize,
+        epsilon: f64,
+    ) -> ExtremelyRandomizedTrees
+        where D: Dataset + Sync, S: Sample + Sync
+    {
+
         let num_attributes_to_try_per_split =
             (dataset.num_attributes() as f64).sqrt().round() as usize;
 
-        let target_robustness = ((dataset.num_records() as f64) / 1000.0).round() as usize;
+        let target_robustness = ((dataset.num_records() as f64) * epsilon).round() as usize;
 
         // eprintln!(
         //     "Fitting {} trees on {} records with num_attributes_to_try_per_split={}, \
@@ -113,22 +138,29 @@ enum TreeElement {
     Leaf { num_samples: u32, num_plus: u32 }
 }
 
-struct Tree {
+pub struct Tree {
     index: usize,
     rng: XorShiftRng,
     tree_elements: HashMap<u64, TreeElement>,
-    alternative_subtrees: HashMap<u64, Vec<AlternativeTree>>,
+    pub alternative_subtrees: HashMap<u64, Vec<AlternativeTree>>,
     min_leaf_size: usize,
     num_attributes_to_try_per_split: usize,
     max_tries_per_split: usize,
+    pub num_robust_nodes: usize,
+    pub num_non_robust_nodes: usize,
 }
-
-struct AlternativeTree {
+pub struct AlternativeTree {
     split: Split,
     split_stats: SplitStats,
-    tree: Tree,
+    pub tree: Tree,
 }
 
+fn cmp(stats_a: &SplitStats, stats_b: &SplitStats) -> bool {
+    stats_a.num_minus_left == stats_b.num_minus_left &&
+        stats_a.num_minus_right == stats_b.num_minus_right &&
+        stats_a.num_plus_left == stats_b.num_plus_left &&
+        stats_a.num_plus_right == stats_b.num_plus_right
+}
 
 impl Tree {
 
@@ -153,6 +185,8 @@ impl Tree {
             min_leaf_size,
             num_attributes_to_try_per_split,
             max_tries_per_split,
+            num_robust_nodes: 0,
+            num_non_robust_nodes: 0
         };
 
         let gini_initial = gini_impurity(dataset.num_plus(), dataset.num_records());
@@ -206,7 +240,7 @@ impl Tree {
                 None => {
                     let alternative_trees =
                         current_tree.alternative_subtrees.get(&element_id).unwrap();
-                    // First tree in this list is the current best one by definition
+                    // First tree in this list is the current best one by convention
                     current_tree = &alternative_trees.first().unwrap().tree;
                 }
             }
@@ -280,9 +314,15 @@ impl Tree {
 
                     // TODO alternative_trees could be a heap, but it probably does not matter
                     // Make sure the split with the highest score is in the first position
+                    //let current_best = alternative_trees.first().unwrap().split_stats.clone();
                     alternative_trees.sort_by(|tree_a, tree_b| {
                         tree_b.split_stats.score.cmp(&tree_a.split_stats.score)
                     });
+                    //let other_best = &alternative_trees.first().unwrap().split_stats;
+
+                    //if !cmp(&other_best, &current_best) {
+                    //    println!("Subtree order changed")
+                    //}
 
                     // Afterwards, we invoke the forgetting procedure on the alternative trees
                     alternative_trees.iter_mut().for_each(|alternative_tree| {
@@ -293,6 +333,99 @@ impl Tree {
                 }
             }
         }
+    }
+
+    pub(crate) fn forget_from2<S: Sample>(tree: &mut Tree, sample: &S, element_id_to_start: u64) -> (usize, usize) {
+
+        let mut num_variants_hit = 0;
+        let mut num_variants_changed = 0;
+
+        let mut element_id = element_id_to_start;
+
+        loop {
+
+            let element = tree.tree_elements.get(&element_id);
+
+            match element {
+
+                Some(TreeElement::Node { split }) => {
+
+                    if sample.is_left_of(split) {
+                        element_id = element_id * 2;
+                    } else {
+                        element_id = (element_id * 2) + 1;
+                    }
+                }
+
+                Some(TreeElement::Leaf { num_samples, num_plus }) => {
+
+                    let new_num_samples = num_samples - 1;
+                    let new_num_plus = if sample.true_label() {
+                        *num_plus - 1
+                    } else {
+                        *num_plus
+                    };
+
+                    let updated_leaf = Tree::leaf(new_num_samples, new_num_plus);
+                    tree.tree_elements.insert(element_id, updated_leaf);
+                    break;
+                }
+
+                None => {
+                    // We hit a non-robust node
+                    //eprintln!("Hit a non-robust node!");
+                    num_variants_hit += 1;
+
+                    // First we have to update the split stats
+                    let alternative_trees =
+                        &mut *tree.alternative_subtrees.get_mut(&element_id).unwrap();
+
+                    alternative_trees.iter_mut().for_each(|alternative_tree| {
+                        let stats = &mut alternative_tree.split_stats;
+
+                        if sample.is_left_of(&alternative_tree.split) {
+                            if sample.true_label() {
+                                stats.num_plus_left -= 1;
+                            } else {
+                                stats.num_minus_left -= 1;
+                            }
+                        } else {
+                            if sample.true_label() {
+                                stats.num_plus_right -= 1;
+                            } else {
+                                stats.num_minus_right -= 1;
+                            }
+                        }
+
+                        stats.update_score_and_impurity_before();
+                    });
+
+                    // TODO alternative_trees could be a heap, but it probably does not matter
+                    // Make sure the split with the highest score is in the first position
+                    let current_best = alternative_trees.first().unwrap().split_stats.clone();
+                    alternative_trees.sort_by(|tree_a, tree_b| {
+                        tree_b.split_stats.score.cmp(&tree_a.split_stats.score)
+                    });
+                    let other_best = &alternative_trees.first().unwrap().split_stats;
+
+                    if !cmp(&other_best, &current_best) {
+                        //println!("Subtree order changed")
+                        num_variants_changed += 1;
+                    }
+
+                    // Afterwards, we invoke the forgetting procedure on the alternative trees
+                    alternative_trees.iter_mut().for_each(|alternative_tree| {
+                        let (alt_hit, alt_changed) = Tree::forget_from2(&mut alternative_tree.tree, sample, element_id);
+                        num_variants_hit += alt_hit;
+                        num_variants_changed += alt_changed;
+                    });
+
+                    break;
+                }
+            }
+        }
+
+        (num_variants_hit, num_variants_changed)
     }
 
     fn generate_candidate_splits<D: Dataset>(
@@ -353,7 +486,7 @@ impl Tree {
         );
 
         let maybe_best_split_stats = split_stats.iter().enumerate()
-            .filter(|(_, stats)| stats.score >= 0)
+            .filter(|(_, stats)| stats.has_positive_score())
             .max_by(|(_, stats1), (_, stats2)| stats1.score.cmp(&stats2.score));
 
         if maybe_best_split_stats.is_none() {
@@ -386,13 +519,16 @@ impl Tree {
 
         let (index_of_best_stats, best_split_stats) = maybe_best_split_stats.unwrap();
 
+        assert!(best_split_stats.has_positive_score());
+
         let best_split_candidate = candidate_splits.get(index_of_best_stats).unwrap();
 
         let mut at_least_one_non_robust = false;
         let mut _num_removals_required = 0;
 
         for (index, stats) in split_stats.iter().enumerate() {
-            if index != index_of_best_stats {
+            // We only check splits that make sense!
+            if index != index_of_best_stats && stats.has_positive_score() {
 
                 let (is_robust_split, num_removals_evaluated) =
                     is_robust(best_split_stats, stats, target_robustness);
@@ -422,7 +558,7 @@ impl Tree {
 
                 let mut alternative_splits: Vec<(usize, usize)> = split_stats.iter()
                     .enumerate()
-                    .filter(|(index, _)| *index != index_of_best_stats)
+                    .filter(|(index, stats)| *index != index_of_best_stats && stats.has_positive_score())
                     .filter_map(|(index, stats)| {
                         let (is_robust_split, num_removals_required_to_break_split) =
                             is_robust(best_split_stats, stats, target_robustness);
@@ -435,6 +571,9 @@ impl Tree {
                     })
                     .collect();
 
+                self.num_non_robust_nodes += 1;
+                // TODO REVISION log this out
+                //println!("\tVariant,{},{},{},{}", target_robustness, samples.len(), current_id, self.index);
                 // eprintln!(
                 //     "Non-robust split ({}) on {} records with {} alternatives \
                 //     for element_id {} in tree {}.",
@@ -465,7 +604,9 @@ impl Tree {
                         alternative_subtrees: HashMap::new(),
                         min_leaf_size: self.min_leaf_size,
                         num_attributes_to_try_per_split: self.num_attributes_to_try_per_split,
-                        max_tries_per_split: self.max_tries_per_split
+                        max_tries_per_split: self.max_tries_per_split,
+                        num_robust_nodes: 0,
+                        num_non_robust_nodes: 0
                     };
 
                     let alternative_candidate_split = candidate_splits.get(index).unwrap();
@@ -499,6 +640,9 @@ impl Tree {
                 self.alternative_subtrees.insert(current_id, alternative_trees);
 
             } else {
+
+                self.num_robust_nodes += 1;
+                //println!("\tRobust,{},{},{},{}", target_robustness, samples.len(), current_id, self.index);
 
                 self.split_and_continue(
                     target_robustness,
