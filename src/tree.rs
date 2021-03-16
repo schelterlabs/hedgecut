@@ -780,7 +780,6 @@ fn compute_split_stats<S: Sample, D: Dataset>(
     all_stats
 }
 
-// TODO needs to be tested more thoroughly
 fn split<'a, S: Sample>(
     samples: &'a mut [S],
     split: &Split
