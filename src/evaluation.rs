@@ -93,12 +93,8 @@ pub fn accuracy_forget<D: Dataset + Sync, S: Sample + Sync + Eq>(
 
     let target_robustness = ((dataset.num_records() as f64) / 1000.0).round() as usize;
 
-    let samples_to_forget: Vec<S> = (0..target_robustness)
-        .map(|_| {
-            let index = rng.gen_range(0, dataset.num_records());
-            samples.get(index as usize).unwrap().clone()
-        })
-        .collect();
+    let samples_to_forget: Vec<S> =
+        samples.choose_multiple(&mut rng, target_robustness).cloned().collect();
 
     let samples_for_retraining: Vec<S> = samples.iter()
         .filter_map(|s| {

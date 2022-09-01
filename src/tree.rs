@@ -272,8 +272,11 @@ impl Tree {
 
                 Some(TreeElement::Leaf { num_samples, num_plus }) => {
 
+                    assert!(*num_samples != 0);
                     let new_num_samples = num_samples - 1;
+
                     let new_num_plus = if sample.true_label() {
+                        assert!(*num_plus != 0);
                         *num_plus - 1
                     } else {
                         *num_plus
@@ -285,8 +288,6 @@ impl Tree {
                 }
 
                 None => {
-                    // We hit a non-robust node
-                    //eprintln!("Hit a non-robust node!");
 
                     // First we have to update the split stats
                     let alternative_trees =
@@ -297,14 +298,18 @@ impl Tree {
 
                         if sample.is_left_of(&alternative_tree.split) {
                             if sample.true_label() {
+                                assert!(stats.num_plus_left != 0);
                                 stats.num_plus_left -= 1;
                             } else {
+                                assert!(stats.num_minus_left != 0);
                                 stats.num_minus_left -= 1;
                             }
                         } else {
                             if sample.true_label() {
+                                assert!(stats.num_plus_right != 0);
                                 stats.num_plus_right -= 1;
                             } else {
+                                assert!(stats.num_minus_right != 0);
                                 stats.num_minus_right -= 1;
                             }
                         }
@@ -462,6 +467,7 @@ impl Tree {
         num_tries: usize,
         constant_attribute_indexes: &mut Cow<[u8]>
     ) {
+        assert!(samples.len() > self.min_leaf_size);
 
         // All attributes are constant, we create a leaf now
         if constant_attribute_indexes.len() == dataset.num_attributes() as usize {
@@ -826,7 +832,7 @@ fn split<'a, S: Sample>(
             samples.swap(cursor, cursor_end);
         }
 
-        if cursor == cursor_end - 1 {
+        if cursor == cursor_end {
             break;
         }
     }
